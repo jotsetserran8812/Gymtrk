@@ -1,0 +1,2139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+  <title>GYMTRK</title>
+  <meta name="description" content="Tracker de entrenamiento con IA basado en evidencia científica."/>
+  <meta name="theme-color" content="#0a0a0a"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="GYMTRK"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="icon" type="image/svg+xml" href="icon.svg"/>
+  <link rel="apple-touch-icon" href="icon.svg"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;background:#0a0a0a;overflow:hidden;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+    body{font-family:'DM Sans',sans-serif;color:#f0ede8}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+    input::placeholder{color:#4a4a4a}
+    ::-webkit-scrollbar{width:2px}
+    ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
+    #root{
+      width:100vw;
+      height:100vh;
+      height:100dvh;
+      max-width:480px;
+      margin:0 auto;
+      background:#0a0a0a;
+      display:flex;
+      flex-direction:column;
+      padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    }
+    @media (min-width:481px){
+      body{display:flex;align-items:center;justify-content:center;background:#070707}
+      #root{height:100vh;max-height:900px;border-radius:24px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  if('serviceWorker' in navigator){
+    window.addEventListener('load',function(){
+      navigator.serviceWorker.register('sw.js').catch(function(e){console.log('SW err:',e);});
+    });
+  }
+  // No interrumpir la música de fondo del sistema (iOS 16.4+/Chrome). 'ambient' mezcla en vez de tomar el foco de audio.
+  try{ if(navigator.audioSession){ navigator.audioSession.type='ambient'; } }catch(e){}
+</script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useMemo}=React;
+
+// ─── TOKENS ──────────────────────────────────────────────────────────────────
+const T={
+  bg0:'#0a0a0a',bg1:'#111',bg2:'#1a1a1a',bg3:'#242424',
+  border:'#2a2a2a',borderHi:'#3a3a3a',
+  text:'#f0ede8',textMuted:'#6b6b6b',textSub:'#9a9a9a',
+  accent:'oklch(75% 0.18 55)',
+  green:'oklch(72% 0.17 145)',
+  red:'oklch(65% 0.20 25)',
+  blue:'oklch(70% 0.15 245)',
+  font:'"DM Sans","Helvetica Neue",sans-serif',
+  mono:'"DM Mono","Fira Mono",monospace',
+};
+
+// ─── ICONS ───────────────────────────────────────────────────────────────────
+const Icon={
+  home:()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+  chart:()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
+  user:()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+  play:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>,
+  check:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+  plus:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+  minus:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+  swap:()=><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>,
+  back:()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>,
+  fire:()=><svg width="14" height="14" viewBox="0 0 24 24" fill={T.accent}><path d="M12 2c0 0-6 5.686-6 10a6 6 0 0012 0c0-4.314-6-10-6-10zm0 18a4 4 0 01-4-4c0-2.5 2-5.5 4-7.5 2 2 4 5 4 7.5a4 4 0 01-4 4z"/></svg>,
+  science:()=><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 3h6"/><path d="M10 3v7L6 19a1 1 0 001 1h10a1 1 0 001-1l-4-9V3"/></svg>,
+  trophy:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4a2 2 0 000 4h2"/><path d="M18 9h2a2 2 0 010 4h-2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="M8 9a4 4 0 008 0V3H8v6z"/></svg>,
+  settings:()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
+  key:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>,
+  bolt:()=><svg width="13" height="13" viewBox="0 0 24 24" fill={T.accent}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+  x:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+  edit:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+  apple:()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 6c-1-2-3-2-5-2-2.5 0-4.5 2-4.5 5.5 0 5 4 11 7.5 11 1.5 0 2-1 3-1s1.5 1 3 1c3.5 0 7.5-6 7.5-11 0-3.5-2-5.5-4.5-5.5-2 0-4 0-5 2"/><path d="M12 6c0-2 1.5-4 3.5-4"/></svg>,
+  moon:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>,
+  flame:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5C5 19 8 22 12 22s7-3 7-8c0-3-1-5-2.5-6.5C13.5 4 12 2 12 2S6 8 6 13c0 1 .5 2 1.5 2.5"/></svg>,
+  drop:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5s6 7.5 6 12a6 6 0 01-12 0c0-4.5 6-12 6-12z"/></svg>,
+};
+
+// ─── SHARED UI ────────────────────────────────────────────────────────────────
+const Badge=({children,color=T.accent,style={}})=>(
+  <span style={{display:'inline-block',padding:'2px 7px',background:color+'18',border:`1px solid ${color}44`,borderRadius:4,fontSize:10,fontFamily:T.mono,color,letterSpacing:'0.05em',textTransform:'uppercase',...style}}>{children}</span>
+);
+
+const Pill=({children,active,onClick,style={}})=>(
+  <button onClick={onClick} style={{background:active?T.accent:T.bg3,color:active?T.bg0:T.textSub,border:`1px solid ${active?T.accent:T.border}`,borderRadius:100,padding:'7px 14px',fontSize:13,fontFamily:T.font,fontWeight:active?700:400,cursor:'pointer',transition:'all .15s',...style}}>{children}</button>
+);
+
+const ProgressBar=({value,max=100,color=T.accent,height=4})=>(
+  <div style={{background:T.bg3,borderRadius:100,height,overflow:'hidden'}}>
+    <div style={{width:`${Math.min(100,(value/max)*100)}%`,height:'100%',background:color,borderRadius:100,transition:'width .4s ease'}}/>
+  </div>
+);
+
+// NumInput: botones +/- Y toque sobre el número para escribirlo directo
+const NumInput=({value,onChange,step=1,disabled,decimals=false})=>{
+  const[editing,setEditing]=useState(false);
+  const[tmp,setTmp]=useState('');
+  const round=n=>decimals?Math.round(n*10)/10:Math.round(n);
+  const commit=()=>{
+    const n=parseFloat(String(tmp).replace(',','.'));
+    if(!isNaN(n))onChange(Math.max(0,round(n)));
+    setEditing(false);
+  };
+  const btn={width:26,height:26,borderRadius:6,background:T.bg3,border:`1px solid ${T.border}`,cursor:disabled?'not-allowed':'pointer',color:disabled?T.textMuted:T.textSub,display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0};
+  return(
+    <div style={{display:'flex',alignItems:'center',gap:4}}>
+      <button disabled={disabled} onClick={()=>onChange(Math.max(0,round(value-step)))} style={btn}><Icon.minus/></button>
+      {editing&&!disabled?(
+        <input
+          type="number" inputMode="decimal" autoFocus
+          value={tmp}
+          onChange={e=>setTmp(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e=>{if(e.key==='Enter'){e.target.blur();}}}
+          style={{width:46,fontSize:14,fontFamily:T.mono,color:T.text,textAlign:'center',background:T.bg0,border:`1px solid ${T.accent}`,borderRadius:6,padding:'3px 2px',outline:'none'}}
+        />
+      ):(
+        <span
+          onClick={()=>{if(!disabled){setTmp(String(value));setEditing(true);}}}
+          style={{fontSize:14,fontFamily:T.mono,color:disabled?T.textMuted:T.text,minWidth:46,textAlign:'center',cursor:disabled?'default':'text',borderBottom:disabled?'none':`1px dashed ${T.border}`,padding:'2px 0'}}
+        >{value}</span>
+      )}
+      <button disabled={disabled} onClick={()=>onChange(round(value+step))} style={btn}><Icon.plus/></button>
+    </div>
+  );
+};
+
+// ─── STORAGE ──────────────────────────────────────────────────────────────────
+const S={
+  get:(k,fb=null)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??fb;}catch{return fb;}},
+  set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),
+  PROFILE:'gt_profile',PLAN:'gt_plan',SESSIONS:'gt_sessions',APIKEY:'gt_apikey',
+  NUTRITION:'gt_nutrition',SEX:'gt_sex',ACTIVE:'gt_active',CUSTOM:'gt_custom',
+};
+
+// Limpia entrenamientos activos de hace más de 18 horas (probable que se olvidaran)
+function cleanStaleActive(){
+  const a=S.get(S.ACTIVE);
+  if(a&&a.startTime&&(Date.now()-a.startTime>18*60*60*1000)){
+    S.set(S.ACTIVE,null);return null;
+  }
+  return a;
+}
+
+// ─── DAILY GOALS (Mifflin-St Jeor + objetivo) ─────────────────────────────────
+function calcDailyGoals(profile,sex='male'){
+  const w=parseFloat(profile.weight)||75;
+  const h=parseFloat(profile.height)||175;
+  const a=parseFloat(profile.age)||28;
+  const bmr=10*w+6.25*h-5*a+(sex==='male'?5:-161);
+  const days=parseFloat(profile.daysPerWeek)||4;
+  const activity=days<=2?1.375:days<=4?1.55:days<=5?1.65:1.75;
+  const tdee=bmr*activity;
+  const adj=profile.goal==='hypertrophy'?300:profile.goal==='strength'?200:profile.goal==='endurance'?-150:profile.goal==='hybrid'?100:0;
+  const kcal=Math.round((tdee+adj)/10)*10;
+  const proteinPerKg=profile.goal==='hypertrophy'?2.0:profile.goal==='endurance'?1.4:1.8;
+  const protein=Math.round(w*proteinPerKg);
+  const water=Math.round(w*0.035*10)/10;
+  return{kcal,protein,water,bmr:Math.round(bmr),tdee:Math.round(tdee),sleepMin:7,sleepMax:9};
+}
+
+function todayKey(){return new Date().toISOString().slice(0,10);}
+
+// Procesa imagen con bajo uso de memoria usando createImageBitmap (fallback a Image si no existe)
+async function imageToBase64(file,maxSize=720){
+  let bitmap=null,resized=null,canvas=null;
+  try{
+    if(typeof createImageBitmap==='function'){
+      bitmap=await createImageBitmap(file);
+      let w=bitmap.width,h=bitmap.height;
+      if(w>maxSize||h>maxSize){
+        if(w>h){h=Math.round(h*maxSize/w);w=maxSize;}
+        else{w=Math.round(w*maxSize/h);h=maxSize;}
+        try{
+          resized=await createImageBitmap(bitmap,{resizeWidth:w,resizeHeight:h,resizeQuality:'high'});
+          bitmap.close();bitmap=null;
+        }catch{
+          // Si createImageBitmap con resize no es soportado (Safari viejo), seguimos con bitmap original
+          resized=bitmap;bitmap=null;
+        }
+      }else{resized=bitmap;bitmap=null;}
+      canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(resized,0,0,w,h);
+      resized.close&&resized.close();resized=null;
+      const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',0.72));
+      canvas=null; // libera referencia
+      const dataUrl=await new Promise((res,rej)=>{
+        const r=new FileReader();
+        r.onload=()=>res(r.result);
+        r.onerror=()=>rej(new Error('read'));
+        r.readAsDataURL(blob);
+      });
+      return{base64:dataUrl.split(',')[1],dataUrl};
+    }
+    // Fallback (Image + canvas)
+    return await new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onerror=()=>reject(new Error('read'));
+      reader.onload=e=>{
+        const img=new Image();
+        img.onerror=()=>reject(new Error('img'));
+        img.onload=()=>{
+          let w=img.width,h=img.height;
+          if(w>maxSize||h>maxSize){
+            if(w>h){h=Math.round(h*maxSize/w);w=maxSize;}
+            else{w=Math.round(w*maxSize/h);h=maxSize;}
+          }
+          const c=document.createElement('canvas');
+          c.width=w;c.height=h;
+          c.getContext('2d').drawImage(img,0,0,w,h);
+          const dataUrl=c.toDataURL('image/jpeg',0.72);
+          img.src='';
+          resolve({base64:dataUrl.split(',')[1],dataUrl});
+        };
+        img.src=e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }finally{
+    if(bitmap&&bitmap.close)bitmap.close();
+    if(resized&&resized.close)resized.close();
+  }
+}
+function lastNDates(n){
+  return Array.from({length:n},(_, i)=>{
+    const d=new Date();d.setDate(d.getDate()-(n-1-i));
+    return d.toISOString().slice(0,10);
+  });
+}
+
+// ─── CLAUDE API (sólo nutrición) ──────────────────────────────────────────────
+const AI={
+  async parseFoodImage(base64Data,apiKey){
+    if(!apiKey)return null;
+    const prompt=`Eres un nutricionista deportivo experto. Analiza esta foto de comida e identifica cada alimento visible. Estima realísticamente las porciones y calcula calorías y gramos de proteína.
+
+RESPONDE ÚNICAMENTE con este JSON sin texto adicional:
+{
+  "kcal": número entero total,
+  "protein": número entero gramos proteína,
+  "items": [{"name": "alimento en español", "amount": "porción estimada visible", "kcal": número, "protein": número}],
+  "confidence": "alta" | "media" | "baja",
+  "notes": "1 frase con suposiciones de porciones, o vacío"
+}`;
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'content-type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({
+          model:'claude-haiku-4-5-20251001',
+          max_tokens:800,
+          messages:[{role:'user',content:[
+            {type:'image',source:{type:'base64',media_type:'image/jpeg',data:base64Data}},
+            {type:'text',text:prompt}
+          ]}]
+        })
+      });
+      if(!res.ok)return null;
+      const data=await res.json();
+      const m=data.content[0].text.match(/\{[\s\S]*\}/);
+      if(!m)return null;
+      return JSON.parse(m[0]);
+    }catch{return null;}
+  },
+
+  async parseFoods(description,apiKey){
+    if(!apiKey)return null;
+    const prompt=`Eres un nutricionista deportivo experto. Estima las calorías y gramos de proteína de esta comida descrita en español. Sé realista con porciones típicas si no se especifican (asume 1 ración estándar).
+
+DESCRIPCIÓN: "${description}"
+
+RESPONDE ÚNICAMENTE con este JSON sin texto adicional:
+{
+  "kcal": número entero total estimado,
+  "protein": número entero gramos proteína totales,
+  "items": [{"name": "alimento en español", "amount": "porción estimada", "kcal": número, "protein": número}],
+  "confidence": "alta" | "media" | "baja",
+  "notes": "1 frase con suposiciones que hiciste, o vacío"
+}`;
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'content-type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,messages:[{role:'user',content:prompt}]})
+      });
+      if(!res.ok)return null;
+      const data=await res.json();
+      const m=data.content[0].text.match(/\{[\s\S]*\}/);
+      if(!m)return null;
+      return JSON.parse(m[0]);
+    }catch{return null;}
+  },
+
+  async getWeeklyAnalysis(profile,goals,weekData,sessionsCount,apiKey){
+    if(!apiKey)return null;
+    const prompt=`Eres un coach experto en nutrición deportiva y recuperación. Analiza la semana de un atleta y da feedback específico, breve y accionable en español.
+
+PERFIL: ${profile.age} años, ${profile.weight}kg, ${profile.height}cm. Objetivo: ${profile.goal}. Entrena ${profile.daysPerWeek} días/semana.
+
+OBJETIVOS DIARIOS:
+- Calorías: ${goals.kcal} kcal
+- Proteína: ${goals.protein}g
+- Sueño: ${goals.sleepMin}-${goals.sleepMax}h
+
+REGISTRO 7 DÍAS:
+${weekData.map(d=>`${d.date}: ${d.kcal||0} kcal, ${d.protein||0}g prot, ${d.sleep||0}h sueño${d.sleepQuality?` (calidad ${d.sleepQuality}/5)`:''}`).join('\n')}
+
+ENTRENAMIENTOS COMPLETADOS: ${sessionsCount}/${profile.daysPerWeek}
+
+RESPONDE ÚNICAMENTE con este JSON sin texto adicional:
+{
+  "summary": "1-2 frases de resumen general",
+  "calories": "evaluación específica + recomendación numérica concreta",
+  "protein": "evaluación + recomendación",
+  "sleep": "evaluación + recomendación",
+  "actions": ["acción concreta 1 para próxima semana", "acción concreta 2", "acción concreta 3"]
+}`;
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'content-type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:800,messages:[{role:'user',content:prompt}]})
+      });
+      if(!res.ok)return null;
+      const data=await res.json();
+      const m=data.content[0].text.match(/\{[\s\S]*\}/);
+      if(!m)return null;
+      return JSON.parse(m[0]);
+    }catch{return null;}
+  },
+
+};
+
+// ─── EXERCISE DATABASE (ESPAÑOL) ──────────────────────────────────────────────
+const yt=q=>`https://www.youtube.com/results?search_query=${encodeURIComponent('como hacer '+q+' tecnica correcta')}`;
+const DB={
+  exercises:{
+    bench_press:{id:'bench_press',name:'Press de Banca',category:'push',muscles:['Pectoral Mayor','Deltoides Anterior','Tríceps'],equipment:['barra','banco'],difficulty:'intermediate',evidence:'A',description:'Empuje horizontal compuesto. Principal motor de hipertrofia para el pectoral (Schoenfeld, 2010).',cues:['Retraer escápulas','Empujar pies contra el suelo','Trayectoria con leve arco'],alternatives:['db_press','incline_press'],steps:['Acuéstate con los pies firmes en el suelo y retrae las escápulas','Agarra la barra a una anchura ligeramente mayor que los hombros','Baja la barra controladamente al pecho (zona del esternón)','Empuja explosivamente extendiendo los codos sin bloquearlos del todo'],videoQuery:'press de banca'},
+    db_press:{id:'db_press',name:'Press con Mancuernas',category:'push',muscles:['Pectoral Mayor','Deltoides Anterior','Tríceps'],equipment:['mancuernas','banco'],difficulty:'beginner',evidence:'A',description:'Mayor rango de movimiento que la barra. Mejora la estabilidad unilateral (Welsch et al., 2005).',cues:['ROM completo abajo','Ligera pronación arriba','Controla la fase excéntrica'],alternatives:['bench_press','incline_press'],steps:['Siéntate con las mancuernas en los muslos y túmbate empujándolas a posición','Codos a 45° del torso, mancuernas alineadas con el pecho','Baja hasta sentir estiramiento en el pectoral','Empuja juntando ligeramente las mancuernas en la parte alta'],videoQuery:'press mancuernas pecho'},
+    incline_press:{id:'incline_press',name:'Press Inclinado',category:'push',muscles:['Pectoral Superior','Deltoides Anterior','Tríceps'],equipment:['barra','banco inclinado'],difficulty:'intermediate',evidence:'A',description:'Inclinación de 30-45° maximiza la activación del pectoral superior (Trebs et al., 2016).',cues:['Ángulo de 30-45°','Codos ligeramente recogidos','Rango de movimiento completo'],alternatives:['db_press','overhead_press'],steps:['Ajusta el banco a 30-45° y retrae las escápulas','Agarre ligeramente más amplio que los hombros','Baja la barra a la parte alta del pecho','Empuja en línea recta hasta extender los brazos'],videoQuery:'press inclinado barra'},
+    overhead_press:{id:'overhead_press',name:'Press Militar',category:'push',muscles:['Deltoides Anterior','Deltoides Lateral','Tríceps','Trapecio Superior'],equipment:['barra'],difficulty:'intermediate',evidence:'A',description:'Estándar de oro para fuerza de hombro. Correlaciona con prevención de lesiones (Hagen, 2021).',cues:['Barra cerca de la cara','Glúteos apretados','Termina con orejas adelante'],alternatives:['db_shoulder_press','incline_press'],steps:['De pie, barra apoyada en deltoides delanteros, agarre poco más amplio que hombros','Aprieta glúteos y core para estabilizar el tronco','Empuja la barra en línea vertical, moviendo la cabeza atrás brevemente','Bloquea arriba con cabeza adelante (oreja al lado del bíceps)'],videoQuery:'press militar barra'},
+    db_shoulder_press:{id:'db_shoulder_press',name:'Press Hombro con Mancuernas',category:'push',muscles:['Deltoides Anterior','Deltoides Lateral','Tríceps'],equipment:['mancuernas'],difficulty:'beginner',evidence:'A',description:'Mayor activación del deltoides anterior vs barra (Saeterbakken, 2013).',cues:['Agarre neutro o pronado','Controla el descenso','Bloqueo completo arriba'],alternatives:['overhead_press'],steps:['Sentado o de pie, mancuernas a la altura de los hombros, palmas adelante','Codos ligeramente delante del torso','Empuja arriba sin bloquear codos del todo','Baja controladamente hasta sentir estiramiento'],videoQuery:'press hombros mancuernas'},
+    tricep_dips:{id:'tricep_dips',name:'Fondos con Lastre',category:'push',muscles:['Tríceps','Pectoral Inferior','Deltoides Anterior'],equipment:['paralelas'],difficulty:'intermediate',evidence:'B',description:'Movimiento compuesto de tríceps + pectoral. Alta activación EMG de cabeza larga del tríceps.',cues:['Ligera inclinación adelante','ROM completo','Control en la parte baja'],alternatives:['skull_crushers'],steps:['Sujétate en barras paralelas, con leve inclinación adelante para más pectoral','Baja flexionando codos hasta que hombros queden por debajo','Mantén el cuerpo cerca de las barras','Empuja arriba extendiendo los tríceps'],videoQuery:'fondos paralelas triceps'},
+    skull_crushers:{id:'skull_crushers',name:'Press Francés',category:'push',muscles:['Tríceps Cabeza Larga','Tríceps Cabeza Lateral'],equipment:['barra Z','banco'],difficulty:'intermediate',evidence:'A',description:'Maximiza el estiramiento de la cabeza larga del tríceps (Maeo et al., 2022).',cues:['Codos fijos','Estiramiento abajo','Trayectoria hacia la frente'],alternatives:['tricep_dips'],steps:['Acostado en banco, agarra la barra Z con manos cerca','Brazos perpendiculares al suelo, codos fijos','Baja la barra hacia la frente flexionando solo los codos','Extiende los tríceps para volver arriba'],videoQuery:'press frances triceps'},
+    deadlift:{id:'deadlift',name:'Peso Muerto Convencional',category:'pull',muscles:['Erectores Espinales','Glúteo Mayor','Isquiotibiales','Dorsales','Trapecios'],equipment:['barra'],difficulty:'intermediate',evidence:'A',description:'Mayor reclutamiento muscular total de cualquier ejercicio (Escamilla, 2001).',cues:['Barra sobre el medio pie','Pecho arriba, lats activos','Empuja el suelo'],alternatives:['romanian_deadlift'],steps:['Pies a la anchura de caderas, barra sobre el medio pie','Bisagra de cadera, agarra la barra con brazos rectos','Pecho arriba, lats activados, espalda neutra','Empuja el suelo y eleva caderas + pecho a la vez hasta extender'],videoQuery:'peso muerto convencional'},
+    romanian_deadlift:{id:'romanian_deadlift',name:'Peso Muerto Rumano',category:'pull',muscles:['Isquiotibiales','Glúteo Mayor','Erectores Espinales'],equipment:['barra'],difficulty:'beginner',evidence:'A',description:'Estiramiento superior de isquiotibiales bajo carga (Schoenfeld & Grgic, 2019).',cues:['Rodillas suavemente flexionadas','Barra cerca de las piernas','Énfasis en bisagra de cadera'],alternatives:['deadlift','nordic_curl'],steps:['Sostén la barra con agarre prono al ancho de hombros, rodillas suavemente flexionadas','Bisagra desde la cadera, empujando glúteos hacia atrás','Baja hasta sentir estiramiento en isquios sin perder espalda neutra','Empuja caderas adelante para volver erguido'],videoQuery:'peso muerto rumano'},
+    pull_up:{id:'pull_up',name:'Dominadas con Lastre',category:'pull',muscles:['Dorsales','Bíceps','Deltoides Posterior','Romboides'],equipment:['barra dominadas'],difficulty:'intermediate',evidence:'A',description:'Mejor tirón vertical para desarrollo de dorsales. Superior al jalón polea.',cues:['Cuelgue completo','Pecho a la barra','Deprime escápulas primero'],alternatives:['barbell_row'],steps:['Cuelga de la barra con agarre prono, ligeramente más amplio que hombros','Activa los lats deprimiendo escápulas antes de tirar','Tira llevando el pecho hacia la barra','Baja controladamente hasta extensión completa'],videoQuery:'dominadas tecnica'},
+    barbell_row:{id:'barbell_row',name:'Remo con Barra',category:'pull',muscles:['Dorsales','Romboides','Bíceps','Erectores Espinales'],equipment:['barra'],difficulty:'intermediate',evidence:'A',description:'Mayor reclutamiento de espalda en tirones horizontales (Lehman, 2005).',cues:['Torso a 45°','Codos hacia atrás','Aprieta arriba'],alternatives:['db_row','pull_up'],steps:['Inclina el torso a 45°, barra colgando con brazos extendidos','Agarre prono al ancho de hombros, espalda neutra','Tira la barra hacia el ombligo, codos hacia atrás','Aprieta escápulas arriba, baja controlado'],videoQuery:'remo barra pendlay'},
+    db_row:{id:'db_row',name:'Remo Mancuerna a Un Brazo',category:'pull',muscles:['Dorsales','Romboides','Bíceps'],equipment:['mancuerna','banco'],difficulty:'beginner',evidence:'A',description:'La ventaja unilateral reduce la carga lumbar vs remo con barra (McGill, 2007).',cues:['Estiramiento completo abajo','Codo pasa el torso','Sin rotación de torso'],alternatives:['barbell_row'],steps:['Apoya rodilla y mano en banco, espalda paralela al suelo','Mancuerna colgando con brazo extendido','Tira hacia la cadera, codo pegado al cuerpo','Sin rotar el torso, baja con control'],videoQuery:'remo mancuerna un brazo'},
+    face_pull:{id:'face_pull',name:'Face Pull',category:'pull',muscles:['Deltoides Posterior','Rotadores Externos','Romboides','Trapecio Medio'],equipment:['polea','cuerda'],difficulty:'beginner',evidence:'A',description:'Esencial para salud de hombros. Corrige dominancia anterior (Reinold, 2020).',cues:['Cuerda hacia la frente','Codos altos','Rotación externa al final'],alternatives:['db_row'],steps:['Polea a altura de cara con cuerda, agarre supino','Tira la cuerda hacia la frente separando las manos','Codos altos y rotación externa al final del movimiento','Aprieta deltoides posteriores, vuelve controlado'],videoQuery:'face pull polea'},
+    squat:{id:'squat',name:'Sentadilla Trasera',category:'legs',muscles:['Cuádriceps','Glúteo Mayor','Isquiotibiales','Erectores Espinales'],equipment:['barra','rack'],difficulty:'intermediate',evidence:'A',description:'Rey del tren inferior. Mayor activación de cuádriceps + glúteos (Contreras, 2016).',cues:['Barra en trapecios','Rodillas siguen los pies','Rompe la paralela'],alternatives:['front_squat','goblet_squat'],steps:['Barra apoyada en trapecios altos, pies al ancho de hombros','Inicia el movimiento con caderas atrás y rodillas alineadas con los pies','Baja hasta romper paralela (cadera bajo rodilla)','Empuja el suelo para subir, manteniendo torso erguido'],videoQuery:'sentadilla con barra'},
+    front_squat:{id:'front_squat',name:'Sentadilla Frontal',category:'legs',muscles:['Cuádriceps','Glúteo Mayor','Core'],equipment:['barra','rack'],difficulty:'advanced',evidence:'A',description:'Activación superior del cuádriceps. Menor compresión espinal (Gullett, 2009).',cues:['Codos altos','Torso vertical','Rodillas adelante'],alternatives:['squat','goblet_squat'],steps:['Barra sobre los deltoides anteriores, codos altos','Pies al ancho de hombros, torso vertical','Baja con rodillas adelantando, manteniendo codos altos','Empuja arriba sin perder la posición de codos'],videoQuery:'sentadilla frontal'},
+    goblet_squat:{id:'goblet_squat',name:'Sentadilla Goblet',category:'legs',muscles:['Cuádriceps','Glúteo Mayor','Core'],equipment:['mancuerna'],difficulty:'beginner',evidence:'B',description:'Auto-corrige inclinación adelante (McGill, 2010). Ideal para aprender el patrón.',cues:['Pesa al pecho','Codos dentro de las rodillas','Postura erguida'],alternatives:['squat'],steps:['Sostén una mancuerna a la altura del pecho, codos pegados','Pies al ancho de hombros, dedos apuntando ligeramente afuera','Baja entre los talones manteniendo torso erguido','Empuja para subir, codos dentro de las rodillas'],videoQuery:'sentadilla goblet'},
+    hip_thrust:{id:'hip_thrust',name:'Hip Thrust con Barra',category:'legs',muscles:['Glúteo Mayor','Isquiotibiales'],equipment:['barra','banco'],difficulty:'beginner',evidence:'A',description:'La mayor activación EMG del glúteo de cualquier ejercicio (Contreras et al., 2015).',cues:['Mentón contraído','Tilt pélvico posterior arriba','Empuja con talones'],alternatives:['romanian_deadlift'],steps:['Espalda alta apoyada en banco, barra sobre las caderas','Pies al suelo, rodillas a 90° en posición arriba','Empuja caderas hacia arriba apretando glúteos','Mentón contraído, tilt pélvico posterior arriba, baja controlado'],videoQuery:'hip thrust gluteos'},
+    nordic_curl:{id:'nordic_curl',name:'Curl Nórdico',category:'legs',muscles:['Bíceps Femoral','Semitendinoso'],equipment:['anclaje'],difficulty:'advanced',evidence:'A',description:'51% de reducción en lesiones de isquiotibiales (van Dyk et al., 2019).',cues:['Excéntrica lenta','Empuja con manos abajo','ROM completo'],alternatives:['romanian_deadlift'],steps:['De rodillas con tobillos anclados, torso erguido','Baja controladamente solo con isquiotibiales resistiendo','Cuando no puedas más, amortigua con manos en el suelo','Empuja con manos para volver y repite'],videoQuery:'curl nordico hamstrings'},
+    calf_raise:{id:'calf_raise',name:'Elevación de Talones',category:'legs',muscles:['Gastrocnemios','Sóleo'],equipment:['máquina'],difficulty:'beginner',evidence:'B',description:'ROM completo esencial para hipertrofia del gastrocnemio (Calatayud, 2017).',cues:['Estiramiento completo abajo','Pausa arriba','Rodilla recta'],alternatives:['goblet_squat'],steps:['Pies en plataforma con talones colgando, máximo estiramiento abajo','Sube empujando con las puntas hasta máxima contracción','Pausa 1 segundo arriba','Baja lentamente al estiramiento completo'],videoQuery:'elevacion talones gemelos'},
+    plank:{id:'plank',name:'Plancha con Lastre',category:'core',muscles:['Transverso Abdominal','Recto Abdominal','Erectores Espinales'],equipment:['disco'],difficulty:'beginner',evidence:'A',description:'Patrón de anti-extensión. Carga neutra sobre la columna (McGill, 2010).',cues:['Columna neutra','Glúteos apretados','Carga progresiva'],alternatives:['ab_wheel'],steps:['Antebrazos en el suelo, codos bajo los hombros','Cuerpo en línea recta de cabeza a talones','Aprieta glúteos y core, evita que caderas caigan','Disco sobre la espalda baja para añadir peso'],videoQuery:'plancha abdominal'},
+    ab_wheel:{id:'ab_wheel',name:'Rueda Abdominal',category:'core',muscles:['Recto Abdominal','Transverso Abdominal','Dorsales'],equipment:['rueda abdominal'],difficulty:'intermediate',evidence:'A',description:'La mayor activación del recto abdominal en anti-extensión (Escamilla, 2010).',cues:['Las caderas no caen','Brazos extendidos','Control al regresar'],alternatives:['plank','hanging_leg_raise'],steps:['De rodillas con la rueda en el suelo, brazos extendidos','Rueda hacia adelante manteniendo el core duro','Caderas no caen, brazos siguen el movimiento','Tira con abdominales para regresar a la posición inicial'],videoQuery:'rueda abdominal ab wheel'},
+    hanging_leg_raise:{id:'hanging_leg_raise',name:'Elevación de Piernas Colgado',category:'core',muscles:['Iliopsoas','Recto Abdominal','Flexores de Cadera'],equipment:['barra dominadas'],difficulty:'intermediate',evidence:'B',description:'Anti-extensión + fuerza de flexores de cadera. Correlaciona con economía de carrera.',cues:['Tilt pélvico posterior','Sin balanceo','Descenso controlado'],alternatives:['ab_wheel','plank'],steps:['Cuelga de la barra con agarre prono, hombros activos','Tilt pélvico posterior antes de subir piernas','Sube las piernas hasta paralelo o más alto sin balanceo','Baja controlado sin perder activación abdominal'],videoQuery:'elevacion piernas colgado'},
+    row_machine:{id:'row_machine',name:'Remo Ergómetro',category:'cardio',muscles:['Cuerpo Completo','Dorsales','Piernas','Core'],equipment:['remo'],difficulty:'beginner',evidence:'A',description:'Mayor consumo total de oxígeno corporal por minuto (Hagerman, 2000).',cues:['Secuencia: piernas-cadera-brazos','Empuja con piernas','Cadencia 1-2 SPM para potencia'],alternatives:['assault_bike','sled_push'],steps:['Pies firmes en los pedales, sujeta el mango','Empuja con piernas primero, luego inclina torso atrás','Tira el mango hasta el esternón con codos atrás','Vuelve en orden inverso: brazos, torso, piernas'],videoQuery:'remo ergometro tecnica'},
+    assault_bike:{id:'assault_bike',name:'Bici de Asalto',category:'cardio',muscles:['Cuerpo Completo','Sistema Cardiovascular'],equipment:['bici asalto'],difficulty:'intermediate',evidence:'A',description:'Estímulo máximo de VO2 en mínimo tiempo (Laursen, 2010).',cues:['Empuja brazos y piernas','Intervalos de máximo esfuerzo','Mantén la cadencia'],alternatives:['row_machine','sled_push'],steps:['Ajusta el asiento para que la rodilla quede ligeramente flexionada abajo','Empuja y tira manijas con brazos coordinados con piernas','Mantén cadencia alta durante intervalos de máximo esfuerzo','Recupera con cadencia baja entre series'],videoQuery:'assault bike intervalos hiit'},
+    sled_push:{id:'sled_push',name:'Empuje de Trineo',category:'cardio',muscles:['Cuádriceps','Glúteos','Sistema Cardiovascular'],equipment:['trineo'],difficulty:'beginner',evidence:'A',description:'Carga concéntrica pura. Cero dolor muscular tardío (Morin, 2011).',cues:['Inclinación adelante baja','Conduce las rodillas arriba','Mantén el ritmo'],alternatives:['assault_bike','farmers_carry'],steps:['Sujeta las pértigas e inclina el cuerpo al frente','Conduce las rodillas arriba en cada paso','Mantén ritmo constante, no te desplomes hacia adelante','Empuja con la pierna trasera en cada zancada'],videoQuery:'sled push trineo'},
+    farmers_carry:{id:'farmers_carry',name:"Caminata del Granjero",category:'cardio',muscles:['Agarre','Trapecios','Core','Glúteos'],equipment:['mancuernas'],difficulty:'beginner',evidence:'A',description:'Locomoción cargada. Correlaciona con fuerza de agarre y resiliencia (Keogh, 2018).',cues:['Postura erguida','Hombros empacados','Zancada uniforme'],alternatives:['sled_push'],steps:['Sujeta mancuernas pesadas a los lados con palmas neutras','Postura erguida, hombros empacados hacia atrás','Camina con pasos cortos y consistentes','Mantén core activo y respiración controlada'],videoQuery:'farmers carry caminata granjero'},
+    // === EJERCICIOS AÑADIDOS PARA PLAN HÍBRIDO ===
+    db_incline_press:{id:'db_incline_press',name:'Press Inclinado con Mancuernas',category:'push',muscles:['Pectoral Superior','Deltoides Anterior','Tríceps'],equipment:['mancuernas','banco inclinado'],difficulty:'beginner',evidence:'A',description:'Mayor ROM y activación unilateral del pectoral superior vs barra (Schoenfeld, 2017).',cues:['Banco a 30-45°','ROM completo abajo','Junta arriba'],alternatives:['incline_press','db_press'],steps:['Banco a 30-45°, mancuernas en muslos','Túmbate empujándolas a posición','Baja hasta sentir estiramiento en pectoral superior','Empuja juntando ligeramente arriba'],videoQuery:'press inclinado mancuernas'},
+    cable_fly:{id:'cable_fly',name:'Aperturas en Polea',category:'push',muscles:['Pectoral Mayor'],equipment:['polea'],difficulty:'beginner',evidence:'A',description:'Aislamiento del pectoral con tensión constante en todo el rango.',cues:['Codos ligeramente flexionados','Aprieta arriba','Estira al final'],alternatives:['db_press','incline_press'],steps:['Poleas a la altura del pecho, una en cada mano','Da un paso adelante con torso ligeramente inclinado','Junta las manos al frente con codos semi-flexionados','Vuelve controlado sintiendo estiramiento'],videoQuery:'aperturas polea pecho'},
+    lateral_raise:{id:'lateral_raise',name:'Elevaciones Laterales',category:'push',muscles:['Deltoides Lateral'],equipment:['mancuernas'],difficulty:'beginner',evidence:'A',description:'Aislamiento del deltoides lateral. Esencial para anchura de hombros.',cues:['Ligera inclinación adelante','Codos arriba antes que las manos','Sin balanceo'],alternatives:['db_shoulder_press'],steps:['De pie con mancuernas a los lados','Codos ligeramente flexionados','Eleva los brazos hacia los lados hasta paralelo al suelo','Baja controlado sin usar trapecio'],videoQuery:'elevaciones laterales hombros'},
+    db_skull_crushers:{id:'db_skull_crushers',name:'Press Francés con Mancuernas',category:'push',muscles:['Tríceps Cabeza Larga','Tríceps Cabeza Lateral'],equipment:['mancuernas','banco'],difficulty:'beginner',evidence:'A',description:'Variante con mancuernas para activación unilateral del tríceps.',cues:['Codos fijos','Estiramiento abajo','Hacia las orejas'],alternatives:['skull_crushers','tricep_pushdown'],steps:['Acuéstate en banco con mancuernas en posición de press','Brazos perpendiculares al suelo, codos fijos','Baja las mancuernas hacia las orejas flexionando solo los codos','Extiende los tríceps para volver arriba'],videoQuery:'press frances mancuernas'},
+    tricep_pushdown:{id:'tricep_pushdown',name:'Tríceps en Polea (Cuerda)',category:'push',muscles:['Tríceps Cabeza Lateral','Tríceps Cabeza Medial'],equipment:['polea','cuerda'],difficulty:'beginner',evidence:'A',description:'Tensión constante. Ideal como ejercicio finalizador del tríceps.',cues:['Codos pegados al torso','Separa manos al final','Aprieta abajo'],alternatives:['skull_crushers','tricep_dips'],steps:['Cuerda en polea alta, agarra ambos extremos','Codos pegados al torso, brazos a 90°','Empuja hacia abajo separando las manos al final','Vuelve controlado'],videoQuery:'triceps polea cuerda'},
+    leg_press:{id:'leg_press',name:'Prensa de Pierna',category:'legs',muscles:['Cuádriceps','Glúteo Mayor'],equipment:['máquina'],difficulty:'beginner',evidence:'A',description:'Permite alto volumen sin estrés axial. Excelente para hipertrofia del cuádriceps.',cues:['Pies al ancho de hombros','Bajada controlada','Sin bloqueo arriba'],alternatives:['squat','goblet_squat'],steps:['Siéntate con espalda apoyada, pies en plataforma','Pies al ancho de hombros, dedos ligeramente afuera','Baja hasta 90° de rodilla controladamente','Empuja con piernas sin bloquear arriba'],videoQuery:'prensa de pierna gym'},
+    bulgarian_split_squat:{id:'bulgarian_split_squat',name:'Sentadilla Búlgara',category:'legs',muscles:['Cuádriceps','Glúteo Mayor','Aductores'],equipment:['mancuernas','banco'],difficulty:'intermediate',evidence:'A',description:'Unilateral con alta activación de glúteo y estabilizadores (Mackey, 2020).',cues:['Pie trasero apoyado','Torso erguido','Bajada hasta 90°'],alternatives:['squat','goblet_squat'],steps:['Coloca un pie atrás sobre un banco a la altura de la rodilla','Pierna delantera a un paso de distancia, mancuernas a los lados','Baja flexionando la pierna delantera hasta 90°','Empuja con la pierna delantera para subir'],videoQuery:'sentadilla bulgara'},
+    leg_extension:{id:'leg_extension',name:'Extensiones de Cuádriceps',category:'legs',muscles:['Cuádriceps'],equipment:['máquina'],difficulty:'beginner',evidence:'A',description:'Aislamiento puro del cuádriceps. Esencial para hipertrofia del recto femoral.',cues:['Espalda apoyada','Extensión completa','Pausa arriba'],alternatives:['squat','leg_press'],steps:['Siéntate en máquina con rodillas alineadas al pivote','Extiende las piernas hasta arriba','Pausa 1 segundo en contracción','Baja controlado'],videoQuery:'extensiones cuadriceps maquina'},
+    pullover:{id:'pullover',name:'Pull-Over con Mancuerna',category:'pull',muscles:['Dorsales','Pectoral Mayor','Serrato'],equipment:['mancuerna','banco'],difficulty:'intermediate',evidence:'B',description:'Estiramiento profundo del dorsal y serrato. Útil para expansión torácica.',cues:['Codos ligeramente flexionados','Estiramiento atrás','Activa lats'],alternatives:['barbell_row','pull_up'],steps:['Túmbate en banco con mancuerna sobre el pecho','Sujeta el extremo superior con ambas manos','Baja por detrás de la cabeza hasta sentir estiramiento','Vuelve activando dorsales'],videoQuery:'pullover mancuerna'},
+    ez_bar_curl:{id:'ez_bar_curl',name:'Curl con Barra Z',category:'pull',muscles:['Bíceps','Braquial'],equipment:['barra Z'],difficulty:'beginner',evidence:'A',description:'Aislamiento del bíceps con menos estrés en muñecas vs barra recta.',cues:['Codos pegados','Sin balanceo','Pausa arriba'],alternatives:['hammer_curl'],steps:['De pie con barra Z, agarre supinado','Codos pegados al torso','Flexiona codos sin mover hombros','Baja controlado'],videoQuery:'curl barra z biceps'},
+    hammer_curl:{id:'hammer_curl',name:'Curl Martillo',category:'pull',muscles:['Braquial','Braquiorradial','Bíceps'],equipment:['mancuernas'],difficulty:'beginner',evidence:'A',description:'Trabaja braquial y braquiorradial — clave para grosor del brazo.',cues:['Agarre neutro','Codos fijos','Sin rotar muñeca'],alternatives:['ez_bar_curl'],steps:['De pie con mancuernas agarre neutro','Codos pegados al torso','Flexiona sin rotar las muñecas','Baja controlado'],videoQuery:'curl martillo mancuernas'},
+    leg_curl:{id:'leg_curl',name:'Curl Femoral Acostado',category:'legs',muscles:['Bíceps Femoral','Semitendinoso'],equipment:['máquina'],difficulty:'beginner',evidence:'A',description:'Aislamiento del isquiotibial. Complementa el peso muerto en hipertrofia.',cues:['Caderas apoyadas','Flexión completa','Excéntrica controlada'],alternatives:['nordic_curl','romanian_deadlift'],steps:['Túmbate boca abajo en máquina, tobillos bajo el rodillo','Flexiona rodillas llevando talones al glúteo','Pausa arriba en contracción','Baja controladamente'],videoQuery:'curl femoral acostado'},
+    run_z2:{id:'run_z2',name:'Carrera Zona 2',category:'cardio',muscles:['Cuerpo Completo','Sistema Cardiovascular'],equipment:['ninguno'],difficulty:'beginner',evidence:'A',description:'Base aeróbica a ritmo conversacional. Mejora densidad mitocondrial sin interferir en hipertrofia (San-Millán, 2018).',cues:['Ritmo conversacional','FC 60-70% máximo','Postura erguida'],alternatives:['row_machine','assault_bike'],steps:['Calienta 5 minutos a paso suave','Eleva a un ritmo donde puedas hablar oraciones completas','Mantén ese ritmo durante toda la sesión','Cool-down de 3-5 minutos al final'],videoQuery:'carrera zona 2 ritmo conversacional'},
+    run_intervals:{id:'run_intervals',name:'Intervalos de Carrera',category:'cardio',muscles:['Cuerpo Completo','Sistema Cardiovascular'],equipment:['ninguno'],difficulty:'intermediate',evidence:'A',description:'HIIT en carrera. Máximo VO2 en mínimo tiempo (Laursen, 2010).',cues:['Calentamiento completo','Esfuerzo máx en intervalos','Recuperación caminando'],alternatives:['run_tempo','assault_bike'],steps:['Calienta 10 minutos trotando suave','Sprint a ritmo 5K (esfuerzo 8/10) por 400m','Camina o trota muy lento 90 segundos','Repite 6-8 veces, cool-down 5 min'],videoQuery:'intervalos carrera 400 metros'},
+    run_tempo:{id:'run_tempo',name:'Carrera Tempo',category:'cardio',muscles:['Cuerpo Completo','Sistema Cardiovascular'],equipment:['ninguno'],difficulty:'intermediate',evidence:'A',description:'Ritmo umbral. Mejora capacidad lactato y eficiencia aeróbica.',cues:['Cómodo-difícil','Habla entrecortada','Sin parar'],alternatives:['run_intervals','run_z2'],steps:['Calienta 10 minutos trotando','Eleva el ritmo a "cómodo-difícil"','Mantén durante 20-25 minutos sin parar','Cool-down 5 minutos suaves'],videoQuery:'carrera tempo ritmo umbral'},
+  },
+  planTemplates:{
+    hybrid_acuna_6days:{
+      name:'Híbrido — Masa + Carrera (6 días)',
+      reference:'Plan basado en principios de entrenamiento concurrente (Acuña-style): hipertrofia 4× + carrera 2×',
+      structure:'Upper/Lower 4 días + 2 sesiones de carrera + 1 descanso',
+      days:[
+        {day:'Monday',label:'Upper — Push',exercises:[
+          {id:'bench_press',sets:4,reps:'6-8',rest:150,note:'Fuerza base'},
+          {id:'db_incline_press',sets:3,reps:'10-12',rest:90,note:'Pectoral superior'},
+          {id:'overhead_press',sets:3,reps:'8-10',rest:120,note:'Hombros con core'},
+          {id:'cable_fly',sets:3,reps:'12-15',rest:60,note:'Estiramiento del pec'},
+          {id:'lateral_raise',sets:4,reps:'12-15',rest:45,note:'Volumen para deltoides medio'},
+          {id:'db_skull_crushers',sets:3,reps:'10-12',rest:60,note:'Tríceps cabeza larga'},
+          {id:'tricep_pushdown',sets:3,reps:'12-15',rest:45,note:'Finalizador'},
+        ]},
+        {day:'Tuesday',label:'Lower — Sentadilla',exercises:[
+          {id:'squat',sets:4,reps:'6-8',rest:180,note:'Compuesto principal'},
+          {id:'leg_press',sets:3,reps:'10-12',rest:120,note:'Volumen cuádriceps'},
+          {id:'bulgarian_split_squat',sets:3,reps:'10/pierna',rest:90,note:'Unilateral, glúteo'},
+          {id:'leg_extension',sets:3,reps:'12-15',rest:60,note:'Aislamiento cuádriceps'},
+          {id:'calf_raise',sets:4,reps:'12-15',rest:45,note:'Gemelos para correr'},
+          {id:'plank',sets:3,reps:'45s',rest:45,note:'Core'},
+        ]},
+        {day:'Wednesday',label:'Carrera Z2',exercises:[
+          {id:'run_z2',sets:1,reps:'45min',rest:0,note:'Ritmo conversacional, FC zona 2'},
+        ]},
+        {day:'Thursday',label:'Upper — Pull',exercises:[
+          {id:'pull_up',sets:4,reps:'6-10',rest:150,note:'Tirón vertical'},
+          {id:'barbell_row',sets:4,reps:'8-10',rest:120,note:'Tirón horizontal pesado'},
+          {id:'db_row',sets:3,reps:'10/lado',rest:90,note:'Unilateral'},
+          {id:'pullover',sets:3,reps:'12-15',rest:60,note:'Estiramiento dorsal'},
+          {id:'ez_bar_curl',sets:3,reps:'10-12',rest:60,note:'Bíceps directo'},
+          {id:'hammer_curl',sets:3,reps:'12-15',rest:60,note:'Braquial + supinador'},
+          {id:'face_pull',sets:3,reps:'15-20',rest:45,note:'Salud de hombros'},
+        ]},
+        {day:'Friday',label:'Lower — Posterior',exercises:[
+          {id:'romanian_deadlift',sets:4,reps:'6-8',rest:150,note:'Patrón hinge'},
+          {id:'hip_thrust',sets:4,reps:'8-10',rest:90,note:'Glúteos'},
+          {id:'leg_curl',sets:3,reps:'12-15',rest:60,note:'Isquios directos'},
+          {id:'nordic_curl',sets:3,reps:'5-8',rest:90,note:'Anti-lesión correr'},
+          {id:'hanging_leg_raise',sets:3,reps:'12',rest:60,note:'Core funcional'},
+        ]},
+        {day:'Saturday',label:'Carrera Calidad',exercises:[
+          {id:'run_intervals',sets:8,reps:'400m',rest:90,note:'Ritmo 5K. Alterna con tempo cada semana'},
+        ]},
+      ]
+    },
+  },
+  selectPlan(profile){return'hybrid_acuna_6days';}
+};
+
+// ─── EJERCICIOS PERSONALIZADOS (creados manualmente por el usuario) ────────────
+// Se mezclan en DB.exercises al cargar para que TODA la app (plan, workout, progreso) los reconozca.
+try{
+  const _custom=JSON.parse(localStorage.getItem('gt_custom')||'{}');
+  Object.assign(DB.exercises,_custom);
+}catch(e){}
+
+function registerCustomExercise({name,category,muscle}){
+  const id='custom_'+Date.now().toString(36);
+  const ex={
+    id,name:name.trim(),category,
+    muscles:muscle&&muscle.trim()?muscle.split(',').map(m=>m.trim()).filter(Boolean):['Personalizado'],
+    equipment:[],difficulty:'intermediate',evidence:'—',custom:true,
+    description:'Ejercicio personalizado añadido por ti.',
+    cues:[],alternatives:[],steps:[],
+    videoQuery:name.trim(),
+  };
+  DB.exercises[id]=ex;
+  try{
+    const all=JSON.parse(localStorage.getItem('gt_custom')||'{}');
+    all[id]=ex;
+    localStorage.setItem('gt_custom',JSON.stringify(all));
+  }catch(e){}
+  return ex;
+}
+
+// Variantes que trabajan el MISMO músculo (comparten al menos un músculo); alternativas curadas primero
+function sameMuscleVariants(exercise){
+  const myMuscles=new Set((exercise.muscles||[]).map(m=>m.toLowerCase()));
+  const altIds=new Set(exercise.alternatives||[]);
+  return Object.values(DB.exercises)
+    .filter(e=>e.id!==exercise.id)
+    .map(e=>{
+      const shared=(e.muscles||[]).filter(m=>myMuscles.has(m.toLowerCase())).length;
+      return{e,shared,isAlt:altIds.has(e.id)};
+    })
+    .filter(x=>x.shared>0||x.isAlt)
+    .sort((a,b)=>(b.isAlt-a.isAlt)||(b.shared-a.shared))
+    .map(x=>x.e);
+}
+
+// ─── PROGRESS DATA HELPERS ────────────────────────────────────────────────────
+const isCardioId=id=>DB.exercises[id]?.category==='cardio';
+
+function calcPRs(sessions){
+  const prs={};
+  sessions.forEach(session=>{
+    (session.exercises||[]).forEach(ex=>{
+      if(isCardioId(ex.id))return; // cardio no tiene PR de peso
+      (ex.sets||[]).forEach(set=>{
+        if(set.done&&set.weight>0&&set.reps>0){
+          const est1rm=set.weight*(1+set.reps/30);
+          if(!prs[ex.id]||est1rm>prs[ex.id].est1rm){
+            prs[ex.id]={weight:set.weight,reps:set.reps,est1rm,date:session.date};
+          }
+        }
+      });
+    });
+  });
+  return prs;
+}
+
+function calcWeeklyVolume(sessions){
+  const byWeek={};
+  sessions.forEach(s=>{
+    const d=new Date(s.date);
+    const mon=new Date(d);mon.setDate(d.getDate()-d.getDay()+1);
+    const key=mon.toISOString().slice(0,10);
+    const vol=(s.exercises||[]).filter(e=>!isCardioId(e.id)).flatMap(e=>e.sets||[]).filter(st=>st.done).reduce((a,st)=>a+st.weight*st.reps,0);
+    byWeek[key]=(byWeek[key]||0)+vol;
+  });
+  return byWeek;
+}
+
+// Stats globales acumuladas desde el inicio
+function calcGlobalStats(sessions){
+  let maxW=0,maxWex='',maxWdate='',totalVol=0,totalKm=0,totalMin=0;
+  sessions.forEach(s=>{
+    (s.exercises||[]).forEach(ex=>{
+      const cardio=isCardioId(ex.id);
+      (ex.sets||[]).forEach(st=>{
+        if(!st.done)return;
+        if(cardio){totalKm+=(st.weight||0);totalMin+=(st.reps||0);}
+        else{
+          if((st.weight||0)>maxW){maxW=st.weight;maxWex=DB.exercises[ex.id]?.name||ex.id;maxWdate=s.date;}
+          totalVol+=(st.weight||0)*(st.reps||0);
+        }
+      });
+    });
+  });
+  return{maxW,maxWex,maxWdate,totalVol:Math.round(totalVol),totalKm:Math.round(totalKm*10)/10,totalMin,count:sessions.length};
+}
+
+// Máximo de la sesión anterior para un ejercicio (referencia "¿cuánto cargué la última vez?")
+function lastSessionMax(sessions,exId){
+  const sorted=[...sessions].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  for(const s of sorted){
+    const ex=(s.exercises||[]).find(e=>e.id===exId);
+    if(!ex)continue;
+    const done=(ex.sets||[]).filter(st=>st.done);
+    if(!done.length)continue;
+    if(isCardioId(exId)){
+      const dist=Math.max(0,...done.map(st=>st.weight||0));
+      const time=Math.max(0,...done.map(st=>st.reps||0));
+      if(dist>0||time>0)return{cardio:true,dist,time,date:s.date};
+    }else{
+      const weighted=done.filter(st=>st.weight>0);
+      if(!weighted.length)continue;
+      const top=weighted.reduce((a,st)=>st.weight>a.weight?st:a,weighted[0]);
+      return{cardio:false,weight:top.weight,reps:top.reps,date:s.date};
+    }
+  }
+  return null;
+}
+function daysAgoLabel(dateStr){
+  const d=Math.floor((Date.now()-new Date(dateStr))/(1000*60*60*24));
+  if(d<=0)return'hoy';
+  if(d===1)return'ayer';
+  if(d<7)return`hace ${d} días`;
+  const w=Math.floor(d/7);
+  return w===1?'hace 1 sem':`hace ${w} sem`;
+}
+
+// Barra de referencia: peso máximo de la última sesión vs lo que llevas hoy
+const LastWeightBar=({sessions,exId,currentSets})=>{
+  const last=lastSessionMax(sessions,exId);
+  if(!last){
+    return(
+      <div style={{background:T.bg2,border:`1px dashed ${T.border}`,borderRadius:10,padding:'10px 14px',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+        <div style={{color:T.textMuted,display:'flex'}}><Icon.trophy/></div>
+        <span style={{fontSize:12,color:T.textMuted}}>Primera vez registrando este ejercicio — sin referencia previa.</span>
+      </div>
+    );
+  }
+  if(last.cardio){
+    return(
+      <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'10px 14px',marginBottom:10}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em'}}>Última vez</span>
+          <span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>{daysAgoLabel(last.date)}</span>
+        </div>
+        <div style={{fontSize:15,fontWeight:700,color:T.text,fontFamily:T.mono,marginTop:3}}>{last.dist>0?`${last.dist} km`:''}{last.dist>0&&last.time>0?' · ':''}{last.time>0?`${last.time} min`:''}</div>
+      </div>
+    );
+  }
+  const currentBest=Math.max(0,...currentSets.map(s=>s.weight||0));
+  const pct=Math.min(100,Math.round(currentBest/last.weight*100));
+  const beat=currentBest>=last.weight&&currentBest>0;
+  const barColor=beat?T.green:T.accent;
+  return(
+    <div style={{background:T.bg2,border:`1px solid ${beat?T.green+'55':T.border}`,borderRadius:10,padding:'10px 14px',marginBottom:10}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <div style={{color:T.accent,display:'flex'}}><Icon.trophy/></div>
+          <span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em'}}>Última vez (máx)</span>
+        </div>
+        <span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>{daysAgoLabel(last.date)}</span>
+      </div>
+      <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8}}>
+        <span style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:T.mono}}>{last.weight}<span style={{fontSize:12,color:T.textMuted}}> kg</span></span>
+        <span style={{fontSize:12,color:T.textSub,fontFamily:T.mono}}>× {last.reps} reps</span>
+        {beat&&<span style={{marginLeft:'auto'}}><Badge color={T.green}>¡Igualado/Superado!</Badge></span>}
+      </div>
+      <div style={{position:'relative',background:T.bg3,borderRadius:100,height:6,overflow:'hidden'}}>
+        <div style={{width:`${pct}%`,height:'100%',background:barColor,borderRadius:100,transition:'width .4s ease'}}/>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
+        <span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>Hoy: {currentBest>0?`${currentBest} kg`:'—'}</span>
+        <span style={{fontSize:10,color:beat?T.green:T.textMuted,fontFamily:T.mono}}>{pct}% del máx</span>
+      </div>
+    </div>
+  );
+};
+
+// ─── DEMO PANEL (Cómo hacerlo + video) ───────────────────────────────────────
+const DemoPanel=({exercise})=>{
+  const[open,setOpen]=useState(false);
+  return(
+    <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,marginBottom:14,overflow:'hidden'}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{width:'100%',background:'none',border:'none',padding:'12px 14px',cursor:'pointer',color:T.text,display:'flex',alignItems:'center',justifyContent:'space-between',fontFamily:T.font,fontSize:13,fontWeight:600}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{color:T.accent,display:'flex'}}><Icon.bolt/></div>
+          <span>Cómo hacerlo correctamente</span>
+        </div>
+        <span style={{color:T.textMuted,fontSize:14,transform:open?'rotate(180deg)':'rotate(0)',transition:'transform .2s'}}>⌄</span>
+      </button>
+      {open&&(
+        <div style={{padding:'0 14px 14px',animation:'fadeIn .2s ease'}}>
+          <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:12}}>
+            {exercise.steps.map((step,i)=>(
+              <div key={i} style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+                <div style={{width:22,height:22,borderRadius:'50%',background:T.accent+'20',border:`1px solid ${T.accent}44`,color:T.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,fontFamily:T.mono,flexShrink:0,marginTop:1}}>{i+1}</div>
+                <span style={{fontSize:12,color:T.textSub,lineHeight:1.55}}>{step}</span>
+              </div>
+            ))}
+          </div>
+          <a href={yt(exercise.videoQuery||exercise.name)} target="_blank" rel="noopener noreferrer" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',padding:'10px',borderRadius:8,background:T.red+'18',border:`1px solid ${T.red}44`,color:T.red,textDecoration:'none',fontSize:12,fontWeight:700,fontFamily:T.font}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 00-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 00.5 6.2C0 8 0 12 0 12s0 4 .5 5.8a3 3 0 002.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 002.1-2.1C24 16 24 12 24 12s0-4-.5-5.8zM9.6 15.6V8.4l6.2 3.6-6.2 3.6z"/></svg>
+            Ver tutorial en YouTube
+          </a>
+          <div style={{marginTop:8,fontSize:10,color:T.textMuted,textAlign:'center'}}>Se abre en una nueva pestaña</div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── ONBOARDING ───────────────────────────────────────────────────────────────
+const OnboardingScreen=({onComplete})=>{
+  const[step,setStep]=useState(0);
+  const[generating,setGenerating]=useState(false);
+  const[genStatus,setGenStatus]=useState(0);
+  const[form,setForm]=useState({name:'',age:'',height:'',weight:'',experience:'',goal:'',daysPerWeek:4,equipment:[]});
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const toggleEquip=e=>set('equipment',form.equipment.includes(e)?form.equipment.filter(x=>x!==e):[...form.equipment,e]);
+
+  const canNext=()=>{
+    if(step===1)return form.name&&form.age&&form.height&&form.weight;
+    if(step===2)return form.experience&&form.goal;
+    if(step===4)return form.equipment.length>0;
+    return true;
+  };
+
+  const genSteps=['Procesando datos biométricos...','Seleccionando ejercicios por evidencia...','Calibrando volumen e intensidad...','Estructurando progresión...','Finalizando plan...'];
+  useEffect(()=>{
+    if(!generating)return;
+    let i=0;
+    const t=setInterval(()=>{setGenStatus(i);i++;if(i>=genSteps.length)clearInterval(t);},600);
+    return()=>clearInterval(t);
+  },[generating]);
+
+  const next=async()=>{
+    if(step<4){setStep(s=>s+1);return;}
+    setStep(5);setGenerating(true);
+    const key=DB.selectPlan(form);
+    const plan=DB.planTemplates[key];
+    setTimeout(()=>onComplete(form,plan),3000);
+  };
+
+  const inp={background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'14px 16px',color:T.text,fontSize:15,fontFamily:T.font,width:'100%',outline:'none',boxSizing:'border-box'};
+  const sel=active=>({background:active?T.accent+'14':T.bg2,border:`1px solid ${active?T.accent:T.border}`,borderRadius:12,padding:'13px 16px',cursor:'pointer',display:'flex',alignItems:'center',gap:12,transition:'all .15s'});
+
+  return(
+    <div style={{height:'100%',display:'flex',flexDirection:'column',background:T.bg0,overflow:'hidden'}}>
+      {step>0&&step<5&&(
+        <div style={{padding:'12px 20px 0'}}>
+          <ProgressBar value={step} max={4}/>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:5}}>
+            <span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>{step} / 4</span>
+            <span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>GYMTRK</span>
+          </div>
+        </div>
+      )}
+      <div style={{flex:1,overflowY:'auto',padding:'24px 20px'}}>
+        {step===0&&(
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',textAlign:'center',gap:24,animation:'slideUp .3s ease'}}>
+            <div style={{width:80,height:80,background:T.accent+'18',border:`1px solid ${T.accent}44`,borderRadius:24,display:'flex',alignItems:'center',justifyContent:'center',fontSize:36}}>⚡</div>
+            <div>
+              <div style={{fontFamily:T.mono,fontSize:11,color:T.accent,letterSpacing:'0.15em',marginBottom:10,textTransform:'uppercase'}}>Bienvenido a</div>
+              <h1 style={{fontSize:44,fontFamily:T.mono,color:T.text,margin:0,letterSpacing:'-0.03em',fontWeight:700}}>GYMTRK</h1>
+              <p style={{color:T.textSub,fontSize:14,lineHeight:1.6,marginTop:14,maxWidth:280}}>Planes basados en evidencia científica. Tracking inteligente. Progreso real.</p>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:8,width:'100%',maxWidth:280}}>
+              {['Plan híbrido basado en estudios','Tracking de progreso en tiempo real','Nutrición analizada con IA'].map((f,i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',gap:10,background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'10px 14px'}}>
+                  <div style={{color:T.accent,flexShrink:0}}><Icon.check/></div>
+                  <span style={{fontSize:13,color:T.textSub}}>{f}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {step===1&&(
+          <div style={{display:'flex',flexDirection:'column',gap:20,animation:'slideUp .2s ease'}}>
+            <div><h2 style={{color:T.text,fontSize:22,margin:'0 0 5px',fontWeight:700}}>Tu perfil</h2><p style={{color:T.textMuted,fontSize:13,margin:0}}>La IA usa estos datos para calibrar tu plan.</p></div>
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              {[{l:'Nombre',k:'name',p:'Tu nombre',t:'text'},{l:'Edad',k:'age',p:'años',t:'number'},{l:'Altura',k:'height',p:'cm',t:'number'},{l:'Peso',k:'weight',p:'kg',t:'number'}].map(f=>(
+                <div key={f.k}>
+                  <label style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,letterSpacing:'0.05em',textTransform:'uppercase',display:'block',marginBottom:5}}>{f.l}</label>
+                  <input type={f.t} placeholder={f.p} value={form[f.k]} onChange={e=>set(f.k,e.target.value)} style={inp} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {step===2&&(
+          <div style={{display:'flex',flexDirection:'column',gap:20,animation:'slideUp .2s ease'}}>
+            <div><h2 style={{color:T.text,fontSize:22,margin:'0 0 5px',fontWeight:700}}>Tu objetivo</h2><p style={{color:T.textMuted,fontSize:13,margin:0}}>El plan IA se estructura según tu meta y experiencia.</p></div>
+            <div>
+              <label style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,letterSpacing:'0.05em',textTransform:'uppercase',display:'block',marginBottom:10}}>Nivel de experiencia</label>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {[{v:'beginner',l:'Principiante',s:'Menos de 1 año entrenando'},{v:'intermediate',l:'Intermedio',s:'1–3 años de entrenamiento'},{v:'advanced',l:'Avanzado',s:'3+ años, domino los movimientos'}].map(o=>(
+                  <div key={o.v} onClick={()=>set('experience',o.v)} style={sel(form.experience===o.v)}>
+                    <div style={{width:18,height:18,borderRadius:'50%',border:`2px solid ${form.experience===o.v?T.accent:T.border}`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                      {form.experience===o.v&&<div style={{width:8,height:8,borderRadius:'50%',background:T.accent}}/>}
+                    </div>
+                    <div><div style={{color:T.text,fontSize:14,fontWeight:600}}>{o.l}</div><div style={{color:T.textMuted,fontSize:12}}>{o.s}</div></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,letterSpacing:'0.05em',textTransform:'uppercase',display:'block',marginBottom:10}}>Meta principal</label>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {[{v:'hybrid',l:'Atleta Híbrido',s:'Fuerza + resistencia cardiovascular',i:'⚡'},{v:'strength',l:'Fuerza Máxima',s:'Progresión en grandes levantamientos',i:'🏋️'},{v:'hypertrophy',l:'Hipertrofia',s:'Maximizar masa muscular',i:'💪'},{v:'endurance',l:'Resistencia',s:'Capacidad cardiovascular y aeróbica',i:'🏃'}].map(o=>(
+                  <div key={o.v} onClick={()=>set('goal',o.v)} style={sel(form.goal===o.v)}>
+                    <span style={{fontSize:20}}>{o.i}</span>
+                    <div style={{flex:1}}><div style={{color:T.text,fontSize:14,fontWeight:600}}>{o.l}</div><div style={{color:T.textMuted,fontSize:12}}>{o.s}</div></div>
+                    {form.goal===o.v&&<div style={{color:T.accent}}><Icon.check/></div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        {step===3&&(
+          <div style={{display:'flex',flexDirection:'column',gap:24,animation:'slideUp .2s ease'}}>
+            <div><h2 style={{color:T.text,fontSize:22,margin:'0 0 5px',fontWeight:700}}>Disponibilidad</h2><p style={{color:T.textMuted,fontSize:13,margin:0}}>La frecuencia óptima depende de tu recuperación.</p></div>
+            <div>
+              <label style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,letterSpacing:'0.05em',textTransform:'uppercase',display:'block',marginBottom:14}}>Días por semana: <span style={{color:T.accent}}>{form.daysPerWeek}</span></label>
+              <div style={{display:'flex',gap:8,justifyContent:'space-between'}}>
+                {[2,3,4,5,6].map(d=>(
+                  <button key={d} onClick={()=>set('daysPerWeek',d)} style={{flex:1,height:52,borderRadius:10,background:form.daysPerWeek===d?T.accent:T.bg2,border:`1px solid ${form.daysPerWeek===d?T.accent:T.border}`,color:form.daysPerWeek===d?T.bg0:T.textSub,fontSize:16,fontWeight:700,cursor:'pointer',transition:'all .15s',fontFamily:T.mono}}>{d}</button>
+                ))}
+              </div>
+              <div style={{marginTop:14,background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:14}}>
+                <div style={{fontSize:12,color:T.textSub,lineHeight:1.6}}>
+                  {form.daysPerWeek<=3&&'📌 Full-body 3×/semana — ideal para progresión lineal (Rhea et al., 2002)'}
+                  {form.daysPerWeek===4&&'📌 Upper/Lower 4×/semana — frecuencia 2× por grupo muscular (Barakat, 2019)'}
+                  {form.daysPerWeek>=5&&'📌 PPL + acondicionamiento — volumen alto con periodización (Helms et al., 2015)'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {step===4&&(
+          <div style={{display:'flex',flexDirection:'column',gap:20,animation:'slideUp .2s ease'}}>
+            <div><h2 style={{color:T.text,fontSize:22,margin:'0 0 5px',fontWeight:700}}>Equipamiento</h2><p style={{color:T.textMuted,fontSize:13,margin:0}}>El plan se adapta a lo que tienes disponible.</p></div>
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {[{v:'full_gym',l:'Gimnasio completo',s:'Barras, mancuernas, máquinas, cables'},{v:'barbell',l:'Barra + discos',s:'Entrenamiento en casa o box'},{v:'dumbbells',l:'Solo mancuernas',s:'Mancuernas ajustables o fijas'},{v:'bodyweight',l:'Solo peso corporal',s:'Barras de dominadas, paralelas'},{v:'cardio_machines',l:'Máquinas cardio',s:'Remo, bici asalto, treadmill'}].map(o=>(
+                <div key={o.v} onClick={()=>toggleEquip(o.v)} style={sel(form.equipment.includes(o.v))}>
+                  <div style={{width:18,height:18,borderRadius:4,border:`2px solid ${form.equipment.includes(o.v)?T.accent:T.border}`,background:form.equipment.includes(o.v)?T.accent:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    {form.equipment.includes(o.v)&&<div style={{color:T.bg0}}><Icon.check/></div>}
+                  </div>
+                  <div><div style={{color:T.text,fontSize:14,fontWeight:600}}>{o.l}</div><div style={{color:T.textMuted,fontSize:12}}>{o.s}</div></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {step===5&&(
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',textAlign:'center',gap:28}}>
+            <div style={{position:'relative',width:80,height:80}}>
+              <div style={{width:80,height:80,borderRadius:'50%',border:`2px solid ${T.border}`,position:'absolute'}}/>
+              <div style={{width:80,height:80,borderRadius:'50%',border:`2px solid transparent`,borderTopColor:T.accent,position:'absolute',animation:'spin 1s linear infinite'}}/>
+              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:28}}>⚡</div>
+            </div>
+            <div><h2 style={{color:T.text,fontSize:20,margin:'0 0 8px',fontWeight:700}}>Preparando tu plan</h2><p style={{color:T.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>Plan híbrido de 6 días basado en entrenamiento concurrente.</p></div>
+            <div style={{display:'flex',flexDirection:'column',gap:10,width:'100%',maxWidth:280}}>
+              {genSteps.map((s,i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',gap:10,opacity:i<=genStatus?1:0.3,transition:'opacity .4s'}}>
+                  <div style={{width:14,height:14,borderRadius:'50%',background:i<genStatus?T.accent:i===genStatus?T.accent+'60':T.bg3,flexShrink:0,transition:'all .3s',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    {i<genStatus&&<div style={{width:5,height:5,borderRadius:'50%',background:T.bg0}}/>}
+                  </div>
+                  <span style={{fontSize:12,color:i<=genStatus?T.text:T.textMuted,fontFamily:T.mono}}>{s}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      {step<5&&(
+        <div style={{padding:'12px 20px 24px'}}>
+          <button onClick={next} disabled={!canNext()} style={{width:'100%',padding:16,borderRadius:14,background:canNext()?T.accent:T.bg3,color:canNext()?T.bg0:T.textMuted,border:'none',fontSize:15,fontWeight:700,fontFamily:T.font,cursor:canNext()?'pointer':'not-allowed',transition:'all .2s'}}>
+            {step===0?'Empezar':step===4?'Generar mi plan →':'Continuar'}
+          </button>
+          {step>0&&<button onClick={()=>setStep(s=>s-1)} style={{width:'100%',padding:12,marginTop:6,background:'none',border:'none',color:T.textMuted,fontSize:13,cursor:'pointer',fontFamily:T.font}}>← Volver</button>}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── EXERCISE PICKER MODAL (añadir ejercicio al plan) ─────────────────────────
+const ExercisePickerModal=({onClose,onAdd,dayLabel})=>{
+  const[query,setQuery]=useState('');
+  const[category,setCategory]=useState('all');
+  const[selected,setSelected]=useState(null);
+  const[sets,setSets]=useState(3);
+  const[reps,setReps]=useState('10');
+  const[rest,setRest]=useState(90);
+  const[mode,setMode]=useState('list'); // 'list' | 'manual'
+  const[mName,setMName]=useState('');
+  const[mCat,setMCat]=useState('push');
+  const[mMuscle,setMMuscle]=useState('');
+
+  const cats=[{v:'all',l:'Todos'},{v:'push',l:'Empuje'},{v:'pull',l:'Tirón'},{v:'legs',l:'Piernas'},{v:'core',l:'Core'},{v:'cardio',l:'Cardio'}];
+  const muscleCats=[{v:'push',l:'Empuje'},{v:'pull',l:'Tirón'},{v:'legs',l:'Piernas'},{v:'core',l:'Core'},{v:'cardio',l:'Cardio'}];
+
+  const createManual=()=>{
+    if(!mName.trim())return;
+    const ex=registerCustomExercise({name:mName,category:mCat,muscle:mMuscle});
+    setSelected(ex);setMode('list');setMName('');setMMuscle('');
+  };
+  const filtered=Object.values(DB.exercises).filter(ex=>{
+    if(category!=='all'&&ex.category!==category)return false;
+    if(query&&!ex.name.toLowerCase().includes(query.toLowerCase()))return false;
+    return true;
+  });
+
+  if(selected){
+    return(
+      <div style={{position:'absolute',inset:0,background:T.bg0+'f0',zIndex:200,display:'flex',flexDirection:'column',animation:'slideUp .2s ease'}}>
+        <div style={{padding:'16px 20px',borderBottom:`1px solid ${T.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>Configurar</div>
+            <div style={{fontSize:16,fontWeight:700,color:T.text,marginTop:2}}>{selected.name}</div>
+          </div>
+          <button onClick={()=>setSelected(null)} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:T.textSub}}><Icon.back/></button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'16px 20px'}}>
+          <div style={{fontSize:11,color:T.textMuted,fontFamily:T.mono,marginBottom:6}}>Añadir a {dayLabel}</div>
+          <div style={{display:'flex',flexDirection:'column',gap:14,marginTop:8}}>
+            <div>
+              <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',marginBottom:6}}>Series</div>
+              <div style={{display:'flex',alignItems:'center',gap:10}}><NumInput value={sets} onChange={setSets} step={1}/></div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',marginBottom:6}}>Repeticiones (ej. "10", "8-10", "30s")</div>
+              <input value={reps} onChange={e=>setReps(e.target.value)} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,padding:'10px 14px',color:T.text,fontSize:14,fontFamily:T.mono,outline:'none',width:'100%',boxSizing:'border-box'}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',marginBottom:6}}>Descanso (segundos)</div>
+              <div style={{display:'flex',alignItems:'center',gap:10}}><NumInput value={rest} onChange={setRest} step={15}/></div>
+            </div>
+            {(()=>{const vars=sameMuscleVariants(selected).slice(0,6);if(!vars.length)return null;return(
+              <div>
+                <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',marginBottom:6}}>Variantes (mismo músculo) — toca para cambiar</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                  {vars.map(v=>(
+                    <button key={v.id} onClick={()=>setSelected(v)} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:100,padding:'6px 12px',color:T.textSub,cursor:'pointer',fontSize:12,fontFamily:T.font}}>{v.name}</button>
+                  ))}
+                </div>
+              </div>
+            );})()}
+          </div>
+        </div>
+        <div style={{padding:'12px 20px',borderTop:`1px solid ${T.border}`,display:'flex',gap:8}}>
+          <button onClick={()=>setSelected(null)} style={{flex:1,padding:'12px',borderRadius:10,background:T.bg2,border:`1px solid ${T.border}`,color:T.textSub,cursor:'pointer',fontSize:13,fontFamily:T.font}}>Cancelar</button>
+          <button onClick={()=>onAdd({id:selected.id,sets,reps:reps||'10',rest:Math.max(0,rest)||0,note:''})} style={{flex:2,padding:'12px',borderRadius:10,background:T.accent,border:'none',color:T.bg0,cursor:'pointer',fontSize:13,fontWeight:700,fontFamily:T.font}}>✓ Añadir al plan</button>
+        </div>
+      </div>
+    );
+  }
+
+  if(mode==='manual'){
+    const inp={background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'12px 14px',color:T.text,fontSize:14,fontFamily:T.font,outline:'none',width:'100%',boxSizing:'border-box'};
+    return(
+      <div style={{position:'absolute',inset:0,background:T.bg0+'f0',zIndex:200,display:'flex',flexDirection:'column',animation:'slideUp .2s ease'}}>
+        <div style={{padding:'16px 20px',borderBottom:`1px solid ${T.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>Crear ejercicio manual</div>
+            <div style={{fontSize:16,fontWeight:700,color:T.text,marginTop:2}}>Nuevo ejercicio</div>
+          </div>
+          <button onClick={()=>setMode('list')} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:T.textSub}}><Icon.back/></button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:16}}>
+          <div>
+            <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',marginBottom:6}}>Nombre del ejercicio</div>
+            <input autoFocus placeholder="Ej. Curl concentrado" value={mName} onChange={e=>setMName(e.target.value)} style={inp}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',marginBottom:6}}>Grupo / categoría</div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {muscleCats.map(c=>(<Pill key={c.v} active={mCat===c.v} onClick={()=>setMCat(c.v)} style={{fontSize:12}}>{c.l}</Pill>))}
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',marginBottom:6}}>Músculo(s) trabajado(s) — separa con comas</div>
+            <input placeholder="Ej. Bíceps, Braquial" value={mMuscle} onChange={e=>setMMuscle(e.target.value)} style={inp}/>
+            <div style={{fontSize:10,color:T.textMuted,marginTop:6}}>Sirve para sugerirte variantes del mismo músculo más adelante.</div>
+          </div>
+        </div>
+        <div style={{padding:'12px 20px',borderTop:`1px solid ${T.border}`,display:'flex',gap:8}}>
+          <button onClick={()=>setMode('list')} style={{flex:1,padding:'12px',borderRadius:10,background:T.bg2,border:`1px solid ${T.border}`,color:T.textSub,cursor:'pointer',fontSize:13,fontFamily:T.font}}>Cancelar</button>
+          <button onClick={createManual} disabled={!mName.trim()} style={{flex:2,padding:'12px',borderRadius:10,background:mName.trim()?T.accent:T.bg3,border:'none',color:mName.trim()?T.bg0:T.textMuted,cursor:mName.trim()?'pointer':'not-allowed',fontSize:13,fontWeight:700,fontFamily:T.font}}>Continuar →</button>
+        </div>
+      </div>
+    );
+  }
+
+  return(
+    <div style={{position:'absolute',inset:0,background:T.bg0+'f0',zIndex:200,display:'flex',flexDirection:'column',animation:'slideUp .2s ease'}}>
+      <div style={{padding:'16px 20px',borderBottom:`1px solid ${T.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>Añadir a</div>
+          <div style={{fontSize:16,fontWeight:700,color:T.text,marginTop:2}}>{dayLabel}</div>
+        </div>
+        <button onClick={onClose} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:T.textSub}}><Icon.x/></button>
+      </div>
+      <div style={{padding:'12px 20px 8px'}}>
+        <button onClick={()=>setMode('manual')} style={{width:'100%',background:'none',border:`1.5px dashed ${T.accent}66`,borderRadius:10,padding:'11px',cursor:'pointer',color:T.accent,fontSize:13,fontWeight:700,fontFamily:T.font,display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:10}}>
+          <span style={{fontSize:16,lineHeight:1}}>+</span> Crear ejercicio manual
+        </button>
+        <input placeholder="Buscar ejercicio..." value={query} onChange={e=>setQuery(e.target.value)} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'11px 16px',color:T.text,fontSize:14,fontFamily:T.font,outline:'none',width:'100%',boxSizing:'border-box',marginBottom:10}}/>
+        <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:4}}>
+          {cats.map(c=>(<Pill key={c.v} active={category===c.v} onClick={()=>setCategory(c.v)} style={{fontSize:11,padding:'5px 11px',flexShrink:0}}>{c.l}</Pill>))}
+        </div>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'4px 20px 20px'}}>
+        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+          {filtered.map(ex=>(
+            <button key={ex.id} onClick={()=>setSelected(ex)} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'11px 14px',cursor:'pointer',textAlign:'left',display:'flex',gap:10,alignItems:'center'}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                  <span style={{fontSize:13,fontWeight:600,color:T.text}}>{ex.name}</span>
+                  <Badge color={ex.evidence==='A'?T.green:T.blue}>Ev. {ex.evidence}</Badge>
+                </div>
+                <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,marginTop:2}}>{ex.muscles.slice(0,2).join(' · ')}</div>
+              </div>
+              <span style={{color:T.accent,fontSize:18}}>+</span>
+            </button>
+          ))}
+          {filtered.length===0&&<div style={{color:T.textMuted,fontSize:13,textAlign:'center',padding:24}}>Sin resultados</div>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+const DashboardScreen=({profile,plan,sessions,onStartWorkout,onUpdatePlan})=>{
+  const today=new Date();
+  const todayName=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][today.getDay()];
+  const[activeDay,setActiveDay]=useState(()=>{
+    const idx=plan.days.findIndex(d=>d.day===todayName);
+    return idx>=0?idx:0;
+  });
+  const selectedDay=plan.days[activeDay];
+  const streak=useMemo(()=>{
+    if(!sessions.length)return 0;
+    const dates=[...new Set(sessions.map(s=>s.date.slice(0,10)))].sort().reverse();
+    let count=0;const today=new Date();
+    for(let i=0;i<dates.length;i++){
+      const diff=Math.floor((today-new Date(dates[i]))/(1000*60*60*24));
+      if(diff===i||diff===i+1){count++;}else break;
+    }
+    return count;
+  },[sessions]);
+
+  const weekSessions=sessions.filter(s=>{
+    const d=new Date(s.date);const now=new Date();
+    const weekStart=new Date(now);weekStart.setDate(now.getDate()-now.getDay()+1);
+    return d>=weekStart;
+  });
+
+  const[editMode,setEditMode]=useState(false);
+  const[showAdd,setShowAdd]=useState(false);
+
+  const deleteExercise=(exIdx)=>{
+    if(!onUpdatePlan)return;
+    const newPlan={...plan,days:plan.days.map((d,i)=>i===activeDay?{...d,exercises:d.exercises.filter((_,j)=>j!==exIdx)}:d)};
+    onUpdatePlan(newPlan);
+  };
+  const addExerciseToDay=(newEx)=>{
+    if(!onUpdatePlan)return;
+    const newPlan={...plan,days:plan.days.map((d,i)=>i===activeDay?{...d,exercises:[...d.exercises,newEx]}:d)};
+    onUpdatePlan(newPlan);
+    setShowAdd(false);
+  };
+
+  return(
+    <div style={{height:'100%',overflowY:'auto',background:T.bg0}}>
+      <div style={{padding:'18px 20px 0'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <div>
+            <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,letterSpacing:'0.05em',textTransform:'uppercase'}}>Buenos días</div>
+            <h1 style={{fontSize:26,color:T.text,margin:'3px 0 0',fontWeight:700,letterSpacing:'-0.02em'}}>{profile.name||'Atleta'}</h1>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:6,background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'8px 12px'}}>
+            <Icon.fire/><span style={{fontSize:16,fontWeight:700,fontFamily:T.mono,color:T.accent}}>{streak}</span><span style={{fontSize:10,color:T.textMuted}}>días</span>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:14}}>
+          {[{l:'Semana',v:`${weekSessions.length}/${plan.days.length}`,u:'sesiones'},{l:'Peso',v:profile.weight,u:'kg'},{l:'Racha',v:streak,u:'días'}].map((s,i)=>(
+            <div key={i} style={{flex:1,background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'10px 12px'}}>
+              <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em'}}>{s.l}</div>
+              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:T.mono,marginTop:2}}>{s.v}</div>
+              <div style={{fontSize:9,color:T.textMuted}}>{s.u}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{padding:'12px 20px 0'}}>
+        <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:10}}>
+          <div style={{color:T.accent,flexShrink:0}}><Icon.science/></div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:11,color:T.textSub,fontFamily:T.mono,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{plan.name}</div>
+            <div style={{fontSize:10,color:T.textMuted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{plan.reference}</div>
+          </div>
+        </div>
+      </div>
+      <div style={{padding:'16px 20px 0'}}>
+        <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,letterSpacing:'0.05em',textTransform:'uppercase',marginBottom:10}}>Plan semanal</div>
+        <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:4}}>
+          {plan.days.map((d,i)=>{
+            const isToday=d.day===todayName;
+            const isDone=sessions.some(s=>s.workoutLabel===d.label&&s.date.slice(0,10)===today.toISOString().slice(0,10));
+            const isActive=i===activeDay;
+            return(
+              <button key={i} onClick={()=>setActiveDay(i)} style={{flexShrink:0,width:52,borderRadius:12,padding:'10px 0',background:isActive?T.accent:T.bg2,border:`1px solid ${isActive?T.accent:isToday?T.accent+'60':T.border}`,cursor:'pointer',transition:'all .15s',display:'flex',flexDirection:'column',alignItems:'center',gap:4,position:'relative'}}>
+                <span style={{fontSize:9,fontFamily:T.mono,color:isActive?T.bg0:T.textMuted,textTransform:'uppercase'}}>{d.day.slice(0,3)}</span>
+                <div style={{width:6,height:6,borderRadius:'50%',background:isDone?T.green:isActive?T.bg0:T.border}}/>
+                {isToday&&!isActive&&<div style={{position:'absolute',top:-3,right:-3,width:7,height:7,borderRadius:'50%',background:T.accent}}/>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {selectedDay&&(
+        <div style={{padding:'16px 20px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,gap:8}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:T.text,fontSize:15,fontWeight:700}}>{selectedDay.label}</div>
+              <div style={{color:T.textMuted,fontSize:12}}>{selectedDay.exercises.length} ejercicios</div>
+            </div>
+            <button onClick={()=>setEditMode(m=>!m)} style={{background:editMode?T.accent+'22':T.bg2,border:`1px solid ${editMode?T.accent+'66':T.border}`,borderRadius:10,padding:'8px 11px',fontSize:12,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:5,fontFamily:T.font,color:editMode?T.accent:T.textSub}}>
+              <Icon.edit/>{editMode?'Listo':'Editar'}
+            </button>
+            {!editMode&&(
+              <button onClick={()=>onStartWorkout(selectedDay)} style={{background:T.accent,color:T.bg0,border:'none',borderRadius:10,padding:'9px 14px',fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6,fontFamily:T.font}}>
+                <Icon.play/> Iniciar
+              </button>
+            )}
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {selectedDay.exercises.map((ex,i)=>{
+              const exData=DB.exercises[ex.id];
+              if(!exData)return null;
+              return(
+                <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'13px 14px',display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:34,height:34,borderRadius:8,background:T.bg3,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    <span style={{fontSize:13,color:T.textMuted,fontFamily:T.mono,fontWeight:700}}>{i+1}</span>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{color:T.text,fontSize:14,fontWeight:600}}>{exData.name}</div>
+                    <div style={{color:T.textMuted,fontSize:12}}>{ex.sets} × {ex.reps}</div>
+                  </div>
+                  {editMode?(
+                    <button onClick={()=>deleteExercise(i)} style={{background:T.red+'18',border:`1px solid ${T.red}44`,borderRadius:8,width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:T.red,flexShrink:0}}><Icon.x/></button>
+                  ):(
+                    <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                      <Badge color={exData.evidence==='A'?T.green:T.blue}>Ev. {exData.evidence}</Badge>
+                      {ex.rest>0&&<span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>{ex.rest}s</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {editMode&&(
+              <button onClick={()=>setShowAdd(true)} style={{background:'none',border:`1.5px dashed ${T.accent}66`,borderRadius:10,padding:'12px',cursor:'pointer',color:T.accent,fontSize:13,fontWeight:700,fontFamily:T.font,display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginTop:4}}>
+                <span style={{fontSize:18,lineHeight:1}}>+</span> Añadir ejercicio
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      <div style={{height:20}}/>
+      {showAdd&&<ExercisePickerModal onClose={()=>setShowAdd(false)} onAdd={addExerciseToDay} dayLabel={selectedDay?.label||''}/>}
+    </div>
+  );
+};
+
+// ─── SWAP MODAL ───────────────────────────────────────────────────────────────
+const SwapModal=({exercise,onClose,onSwap})=>{
+  const[query,setQuery]=useState('');
+  const altIds=new Set(exercise.alternatives||[]);
+  const myMuscles=new Set((exercise.muscles||[]).map(m=>m.toLowerCase()));
+  const sharesMuscle=e=>(e.muscles||[]).some(m=>myMuscles.has(m.toLowerCase()));
+  // Base: variantes que trabajan el MISMO músculo (curadas primero); luego el resto de la misma categoría
+  const variants=sameMuscleVariants(exercise);
+  const variantIds=new Set(variants.map(e=>e.id));
+  const sameCatExtra=Object.values(DB.exercises).filter(e=>e.id!==exercise.id&&e.category===exercise.category&&!variantIds.has(e.id));
+  const pool=[...variants,...sameCatExtra];
+  const sorted=query?pool.filter(e=>e.name.toLowerCase().includes(query.toLowerCase())):pool;
+
+  return(
+    <div style={{position:'absolute',inset:0,background:T.bg0+'f0',zIndex:200,display:'flex',flexDirection:'column',animation:'slideUp .2s ease'}}>
+      <div style={{padding:'16px 20px',borderBottom:`1px solid ${T.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>Reemplazar</div>
+          <div style={{fontSize:16,fontWeight:700,color:T.text,marginTop:2}}>{exercise.name}</div>
+        </div>
+        <button onClick={onClose} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:T.textSub}}><Icon.x/></button>
+      </div>
+      <div style={{padding:'12px 20px 8px'}}>
+        <input placeholder="Buscar ejercicio..." value={query} onChange={e=>setQuery(e.target.value)} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'11px 16px',color:T.text,fontSize:14,fontFamily:T.font,outline:'none',width:'100%',boxSizing:'border-box'}}/>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'4px 20px 20px'}}>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {sorted.map(exData=>(
+            <div key={exData.id} style={{background:T.bg2,border:`1px solid ${altIds.has(exData.id)?T.accent+'66':T.border}`,borderRadius:10,padding:'12px 14px',display:'flex',gap:12,alignItems:'flex-start'}}>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:3,flexWrap:'wrap'}}>
+                  <span style={{fontSize:14,fontWeight:700,color:T.text}}>{exData.name}</span>
+                  <Badge color={exData.evidence==='A'?T.green:T.blue}>Ev. {exData.evidence}</Badge>
+                  {altIds.has(exData.id)&&<Badge color={T.accent}>Recomendado</Badge>}
+                  {!altIds.has(exData.id)&&sharesMuscle(exData)&&<Badge color={T.green}>Mismo músculo</Badge>}
+                </div>
+                <div style={{fontSize:11,color:T.textMuted}}>{exData.muscles.slice(0,2).join(', ')}</div>
+              </div>
+              <button onClick={()=>onSwap(exData)} style={{flexShrink:0,background:T.accent+'18',border:`1px solid ${T.accent}44`,borderRadius:8,padding:'8px 12px',color:T.accent,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:T.font}}>Elegir</button>
+            </div>
+          ))}
+          {sorted.length===0&&<div style={{color:T.textMuted,fontSize:13,textAlign:'center',padding:24}}>Sin resultados para "{query}"</div>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── WORKOUT SCREEN ───────────────────────────────────────────────────────────
+const WorkoutScreen=({workout,profile,apiKey,sessions=[],onFinish,savedState})=>{
+  const initial=savedState&&savedState.workout?savedState:null;
+  const[currentIdx,setCurrentIdx]=useState(initial?.currentIdx||0);
+  const[exercises,setExercises]=useState(()=>initial?.exercises||workout.exercises.map(ex=>({...ex})));
+  const[sets,setSets]=useState(()=>initial?.sets||workout.exercises.map(ex=>{
+    const cardio=isCardioId(ex.id);
+    return Array.from({length:ex.sets},(_, i)=>({setNum:i+1,reps:cardio?0:(parseInt(ex.reps)||8),weight:0,done:false}));
+  }));
+  const startTimeRef=useRef(initial?.startTime||Date.now());
+  const restEndRef=useRef(initial?.restEndTime&&initial.restEndTime>Date.now()?initial.restEndTime:0);
+  const restTotalRef=useRef(initial?.restTotal||0);
+  const[restActive,setRestActive]=useState(restEndRef.current>0);
+  const[restTime,setRestTime]=useState(()=>restEndRef.current>0?Math.max(0,Math.ceil((restEndRef.current-Date.now())/1000)):0);
+  const[elapsed,setElapsed]=useState(()=>Math.floor((Date.now()-startTimeRef.current)/1000));
+  const[showSwap,setShowSwap]=useState(false);
+
+  const currentEx=exercises[currentIdx];
+  const currentExData=DB.exercises[currentEx?.id];
+  const currentSets=sets[currentIdx];
+  const isCardio=currentExData?.category==='cardio';
+
+  // Timer del entreno basado en timestamp — preciso tras reload
+  useEffect(()=>{
+    const update=()=>setElapsed(Math.floor((Date.now()-startTimeRef.current)/1000));
+    update();
+    const t=setInterval(update,1000);
+    return()=>clearInterval(t);
+  },[]);
+
+  // Timer de descanso basado en timestamp
+  useEffect(()=>{
+    if(!restActive)return;
+    const update=()=>{
+      const rem=Math.max(0,Math.ceil((restEndRef.current-Date.now())/1000));
+      setRestTime(rem);
+      if(rem<=0){setRestActive(false);restEndRef.current=0;}
+    };
+    update();
+    const t=setInterval(update,250);
+    return()=>clearInterval(t);
+  },[restActive]);
+
+  // Auto-guarda estado del entrenamiento en localStorage en cada cambio
+  useEffect(()=>{
+    S.set(S.ACTIVE,{
+      workout,
+      exercises,
+      sets,
+      currentIdx,
+      startTime:startTimeRef.current,
+      restEndTime:restActive?restEndRef.current:0,
+      restTotal:restTotalRef.current,
+      lastUpdate:Date.now(),
+    });
+  },[exercises,sets,currentIdx,restActive,workout]);
+
+  // Guarda también cuando se va al fondo (cierre app, cambio de pestaña)
+  useEffect(()=>{
+    const onVis=()=>{
+      if(document.visibilityState==='hidden'){
+        S.set(S.ACTIVE,{workout,exercises,sets,currentIdx,startTime:startTimeRef.current,restEndTime:restActive?restEndRef.current:0,restTotal:restTotalRef.current,lastUpdate:Date.now()});
+      }
+    };
+    document.addEventListener('visibilitychange',onVis);
+    return()=>document.removeEventListener('visibilitychange',onVis);
+  },[exercises,sets,currentIdx,restActive,workout]);
+
+  const updateSet=(ei,si,field,value)=>setSets(prev=>prev.map((es,e)=>e===ei?es.map((s,i)=>i===si?{...s,[field]:value}:s):es));
+  const markDone=(ei,si)=>{
+    updateSet(ei,si,'done',true);
+    const rest=exercises[ei].rest;
+    if(rest>0){
+      restEndRef.current=Date.now()+rest*1000;
+      restTotalRef.current=rest;
+      setRestTime(rest);
+      setRestActive(true);
+    }
+  };
+  const skipRest=()=>{restEndRef.current=0;setRestActive(false);setRestTime(0);};
+
+  const handleSwap=(newEx)=>{
+    setExercises(prev=>prev.map((ex,i)=>i===currentIdx?{...ex,id:newEx.id}:ex));
+    setShowSwap(false);
+  };
+
+  const totalDone=sets.flat().filter(s=>s.done).length;
+  const totalSets=sets.flat().length;
+  const fmt=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  const restTotal=restTotalRef.current||1;
+
+  const handleFinish=()=>{
+    const sessionExercises=exercises.map((ex,ei)=>({id:ex.id,name:DB.exercises[ex.id]?.name||ex.id,sets:sets[ei]}));
+    S.set(S.ACTIVE,null);
+    onFinish({exercises:sessionExercises,duration:elapsed,workoutLabel:workout.label});
+  };
+
+  return(
+    <div style={{height:'100%',display:'flex',flexDirection:'column',background:T.bg0,position:'relative'}}>
+      <div style={{padding:'14px 20px',borderBottom:`1px solid ${T.border}`}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em'}}>En progreso</div>
+            <div style={{color:T.text,fontSize:15,fontWeight:700,marginTop:2}}>{workout.label}</div>
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,padding:'5px 10px',fontFamily:T.mono,fontSize:13,color:T.accent}}>{fmt(elapsed)}</div>
+            <button onClick={handleFinish} style={{background:T.red+'18',border:`1px solid ${T.red}44`,borderRadius:8,padding:'5px 12px',color:T.red,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:T.font}}>Fin</button>
+          </div>
+        </div>
+        <div style={{marginTop:8}}>
+          <ProgressBar value={totalDone} max={totalSets}/>
+          <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,marginTop:3}}>{totalDone}/{totalSets} series completadas</div>
+        </div>
+      </div>
+
+      {restActive&&(
+        <div style={{position:'absolute',inset:0,background:T.bg0+'ee',zIndex:100,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:20}}>
+          <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.1em'}}>Tiempo de descanso</div>
+          <div style={{position:'relative',width:120,height:120}}>
+            <svg width="120" height="120" style={{position:'absolute',transform:'rotate(-90deg)'}}>
+              <circle cx="60" cy="60" r="54" fill="none" stroke={T.bg3} strokeWidth="6"/>
+              <circle cx="60" cy="60" r="54" fill="none" stroke={T.accent} strokeWidth="6" strokeDasharray={`${2*Math.PI*54}`} strokeDashoffset={`${2*Math.PI*54*(1-restTime/restTotal)}`} style={{transition:'stroke-dashoffset 1s linear'}}/>
+            </svg>
+            <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+              <span style={{fontSize:34,fontWeight:700,fontFamily:T.mono,color:T.text}}>{restTime}</span>
+              <span style={{fontSize:10,color:T.textMuted}}>seg</span>
+            </div>
+          </div>
+          <button onClick={skipRest} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'10px 24px',color:T.textSub,cursor:'pointer',fontFamily:T.font,fontSize:14}}>Saltar descanso</button>
+        </div>
+      )}
+
+      <div style={{display:'flex',borderBottom:`1px solid ${T.border}`,overflowX:'auto'}}>
+        {exercises.map((ex,i)=>{
+          const allDone=sets[i].every(s=>s.done);
+          const exData=DB.exercises[ex.id];
+          return(
+            <button key={i} onClick={()=>setCurrentIdx(i)} style={{flexShrink:0,padding:'9px 14px',background:'transparent',border:'none',borderBottom:`2px solid ${i===currentIdx?T.accent:'transparent'}`,cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
+              <div style={{width:7,height:7,borderRadius:'50%',background:allDone?T.green:i===currentIdx?T.accent:T.border}}/>
+              <span style={{fontSize:9,color:i===currentIdx?T.accent:T.textMuted,fontFamily:T.mono,whiteSpace:'nowrap'}}>{(exData?.name||'?').split(' ')[0]}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{flex:1,overflowY:'auto',padding:'14px 20px'}}>
+        {currentExData&&(
+          <>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
+              <div style={{flex:1,minWidth:0}}>
+                <h2 style={{color:T.text,fontSize:19,margin:'0 0 5px',fontWeight:700}}>{currentExData.name}</h2>
+                <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                  {currentExData.muscles.slice(0,2).map((m,i)=><Badge key={i} color={T.textMuted} style={{borderColor:T.border}}>{m}</Badge>)}
+                  <Badge color={currentExData.evidence==='A'?T.green:T.blue}>Evidencia {currentExData.evidence}</Badge>
+                </div>
+              </div>
+              <button onClick={()=>setShowSwap(true)} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,padding:'6px 10px',cursor:'pointer',color:T.textSub,display:'flex',alignItems:'center',gap:5,fontSize:12,fontFamily:T.font,flexShrink:0,marginLeft:10}}>
+                <Icon.swap/> Cambiar
+              </button>
+            </div>
+            <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'11px 14px',marginBottom:10}}>
+              <div style={{fontSize:12,color:T.textSub,lineHeight:1.6,marginBottom:7}}>{currentExData.description}</div>
+              <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                {currentExData.cues.map((cue,i)=>(
+                  <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                    <div style={{width:4,height:4,borderRadius:'50%',background:T.accent,marginTop:6,flexShrink:0}}/>
+                    <span style={{fontSize:12,color:T.textMuted}}>{cue}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <DemoPanel exercise={currentExData}/>
+            <LastWeightBar sessions={sessions} exId={currentEx.id} currentSets={currentSets}/>
+            <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,overflow:'hidden',marginBottom:14}}>
+              <div style={{display:'grid',gridTemplateColumns:'38px 1fr 1fr 80px',padding:'9px 14px',borderBottom:`1px solid ${T.border}`}}>
+                {['SET',isCardio?'DIST (km)':'PESO (kg)',isCardio?'TIEMPO (min)':'REPS',''].map((h,i)=><span key={i} style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,letterSpacing:'0.05em',textAlign:i===3?'right':'left'}}>{h}</span>)}
+              </div>
+              {currentSets.map((s,si)=>(
+                <div key={si} style={{display:'grid',gridTemplateColumns:'38px 1fr 1fr 80px',padding:'10px 14px',borderBottom:si<currentSets.length-1?`1px solid ${T.border}`:'none',background:s.done?T.green+'08':'transparent',transition:'background .3s',alignItems:'center'}}>
+                  <span style={{fontSize:14,fontFamily:T.mono,color:s.done?T.green:T.textSub,fontWeight:700}}>{si+1}</span>
+                  <NumInput value={s.weight} onChange={v=>updateSet(currentIdx,si,'weight',v)} step={isCardio?0.5:2.5} decimals={isCardio} disabled={s.done}/>
+                  <NumInput value={s.reps} onChange={v=>updateSet(currentIdx,si,'reps',v)} step={isCardio?5:1} disabled={s.done}/>
+                  <div style={{display:'flex',justifyContent:'flex-end'}}>
+                    {s.done?(
+                      <div style={{color:T.green,display:'flex',alignItems:'center',gap:4}}><Icon.check/><span style={{fontSize:11,fontFamily:T.mono}}>Hecho</span></div>
+                    ):(
+                      <button onClick={()=>markDone(currentIdx,si)} style={{background:T.accent+'20',border:`1px solid ${T.accent}44`,borderRadius:8,padding:'6px 12px',color:T.accent,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:T.font}}>✓ Listo</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {currentIdx<exercises.length-1&&(
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'11px 14px'}}>
+                <div>
+                  <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>Siguiente</div>
+                  <div style={{fontSize:14,color:T.text,fontWeight:600,marginTop:2}}>{DB.exercises[exercises[currentIdx+1].id]?.name}</div>
+                </div>
+                <button onClick={()=>setCurrentIdx(i=>i+1)} style={{background:T.bg3,border:`1px solid ${T.border}`,borderRadius:8,padding:'8px 14px',cursor:'pointer',color:T.textSub,fontSize:13,fontFamily:T.font}}>→</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+      {showSwap&&currentExData&&(
+        <SwapModal exercise={currentExData} onClose={()=>setShowSwap(false)} onSwap={handleSwap}/>
+      )}
+    </div>
+  );
+};
+
+// ─── WORKOUT DONE ─────────────────────────────────────────────────────────────
+const WorkoutDoneScreen=({session,onClose})=>{
+  const totalSets=session.exercises.flatMap(e=>e.sets).filter(s=>s.done).length;
+  const totalVolume=session.exercises.filter(e=>!isCardioId(e.id)).flatMap(e=>e.sets).filter(s=>s.done).reduce((a,s)=>a+s.weight*s.reps,0);
+  const totalKm=session.exercises.filter(e=>isCardioId(e.id)).flatMap(e=>e.sets).filter(s=>s.done).reduce((a,s)=>a+(s.weight||0),0);
+  const isCardioSession=session.exercises.length>0&&session.exercises.every(e=>isCardioId(e.id));
+  const fmt=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  return(
+    <div style={{height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:T.bg0,padding:24,textAlign:'center',animation:'slideUp .3s ease'}}>
+      <div style={{width:72,height:72,borderRadius:'50%',background:T.green+'18',border:`2px solid ${T.green}44`,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:20}}>
+        <div style={{color:T.green,transform:'scale(1.4)'}}><Icon.check/></div>
+      </div>
+      <h2 style={{fontSize:26,color:T.text,margin:'0 0 8px',fontWeight:700}}>Sesión completada</h2>
+      <p style={{color:T.textMuted,fontSize:14,margin:'0 0 28px'}}>{session.workoutLabel}</p>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,width:'100%',marginBottom:28}}>
+        {[{l:'Duración',v:fmt(session.duration),u:'min'},{l:'Series',v:totalSets,u:'completadas'},isCardioSession?{l:'Distancia',v:totalKm||0,u:'km'}:{l:'Volumen',v:totalVolume>0?`${Math.round(totalVolume/100)/10}k`:'0',u:'kg total'}].map((s,i)=>(
+          <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'11px 8px'}}>
+            <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>{s.l}</div>
+            <div style={{fontSize:17,fontWeight:700,fontFamily:T.mono,color:T.accent,marginTop:3}}>{s.v}</div>
+            <div style={{fontSize:9,color:T.textMuted}}>{s.u}</div>
+          </div>
+        ))}
+      </div>
+      <button onClick={onClose} style={{width:'100%',padding:15,borderRadius:14,background:T.accent,color:T.bg0,border:'none',fontSize:15,fontWeight:700,fontFamily:T.font,cursor:'pointer'}}>Ver dashboard</button>
+    </div>
+  );
+};
+
+// ─── PROGRESS ─────────────────────────────────────────────────────────────────
+const ProgressScreen=({sessions,profile})=>{
+  const[metric,setMetric]=useState('volume');
+  const prs=useMemo(()=>calcPRs(sessions),[sessions]);
+  const weeklyVol=useMemo(()=>calcWeeklyVolume(sessions),[sessions]);
+  const stats=useMemo(()=>calcGlobalStats(sessions),[sessions]);
+
+  // Ejercicios de fuerza con datos registrados, ordenados por nº de sesiones
+  const trackedExercises=useMemo(()=>{
+    const counts={};
+    sessions.forEach(s=>(s.exercises||[]).forEach(e=>{
+      if(isCardioId(e.id))return;
+      if((e.sets||[]).some(st=>st.done&&st.weight>0))counts[e.id]=(counts[e.id]||0)+1;
+    }));
+    return Object.entries(counts).sort(([,a],[,b])=>b-a).map(([id])=>id);
+  },[sessions]);
+  const[exId,setExId]=useState(null);
+  const selectedEx=exId||trackedExercises[0]||'bench_press';
+
+  const volEntries=Object.entries(weeklyVol).sort(([a],[b])=>a.localeCompare(b)).slice(-12);
+  const strengthEntries=sessions.filter(s=>s.exercises.some(e=>e.id===selectedEx)).slice(-12).map(s=>{
+    const bp=s.exercises.find(e=>e.id===selectedEx);
+    const best=bp?.sets?.filter(st=>st.done&&st.weight>0&&st.reps>0).reduce((a,st)=>Math.max(a,st.weight*(1+st.reps/30)),0)||0;
+    return[s.date.slice(0,10),Math.round(best*10)/10];
+  });
+
+  const data=metric==='strength'?strengthEntries:metric==='volume'?volEntries:[];
+  const hasData=data.length>=2;
+
+  const values=data.map(([,v])=>v);
+  const maxV=Math.max(...values,1);const minV=Math.min(...values,0);const range=maxV-minV||1;
+  const W=320;const H=80;
+  const pts=values.map((v,i)=>`${(i/(Math.max(data.length-1,1)))*W},${H-((v-minV)/range)*(H-10)-5}`);
+
+  const topPRs=Object.entries(prs).sort(([,a],[,b])=>b.est1rm-a.est1rm).slice(0,4);
+
+  return(
+    <div style={{height:'100%',overflowY:'auto',background:T.bg0,padding:'18px 20px'}}>
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em'}}>Historial</div>
+        <h2 style={{fontSize:24,color:T.text,margin:'4px 0 0',fontWeight:700}}>Tu progreso</h2>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
+        <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:'13px 14px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><div style={{color:T.accent}}><Icon.trophy/></div><span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>Peso máx</span></div>
+          <div style={{fontSize:22,fontWeight:700,fontFamily:T.mono,color:T.accent}}>{stats.maxW||0}<span style={{fontSize:12,color:T.textMuted}}> kg</span></div>
+          <div style={{fontSize:10,color:T.textMuted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{stats.maxWex||'—'}</div>
+        </div>
+        <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:'13px 14px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><div style={{color:T.green}}><Icon.bolt/></div><span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>Volumen total</span></div>
+          <div style={{fontSize:22,fontWeight:700,fontFamily:T.mono,color:T.green}}>{stats.totalVol>=1000?(stats.totalVol/1000).toFixed(1)+'t':stats.totalVol}<span style={{fontSize:12,color:T.textMuted}}>{stats.totalVol>=1000?'':' kg'}</span></div>
+          <div style={{fontSize:10,color:T.textMuted}}>desde el inicio</div>
+        </div>
+        <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:'13px 14px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><div style={{color:T.blue}}><Icon.fire/></div><span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>Km corridos</span></div>
+          <div style={{fontSize:22,fontWeight:700,fontFamily:T.mono,color:T.blue}}>{stats.totalKm||0}<span style={{fontSize:12,color:T.textMuted}}> km</span></div>
+          <div style={{fontSize:10,color:T.textMuted}}>{stats.totalMin?`${Math.round(stats.totalMin)} min totales`:'sin carreras'}</div>
+        </div>
+        <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:'13px 14px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><div style={{color:T.accent}}><Icon.check/></div><span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>Sesiones</span></div>
+          <div style={{fontSize:22,fontWeight:700,fontFamily:T.mono,color:T.text}}>{stats.count}</div>
+          <div style={{fontSize:10,color:T.textMuted}}>entrenamientos</div>
+        </div>
+      </div>
+
+      <div style={{display:'flex',gap:6,marginBottom:metric==='strength'?10:16}}>
+        {[{v:'volume',l:'Volumen'},{v:'strength',l:'Fuerza por ejercicio'}].map(m=>(
+          <Pill key={m.v} active={metric===m.v} onClick={()=>setMetric(m.v)} style={{fontSize:12,padding:'6px 12px'}}>{m.l}</Pill>
+        ))}
+      </div>
+      {metric==='strength'&&trackedExercises.length>0&&(
+        <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:6,marginBottom:12}}>
+          {trackedExercises.map(id=>(
+            <Pill key={id} active={selectedEx===id} onClick={()=>setExId(id)} style={{fontSize:11,padding:'5px 11px',flexShrink:0}}>{DB.exercises[id]?.name||id}</Pill>
+          ))}
+        </div>
+      )}
+      <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px',marginBottom:16}}>
+        {hasData?(
+          <>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
+              <div>
+                <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>{metric==='volume'?'Volumen semanal (kg)':`${DB.exercises[selectedEx]?.name||'Ejercicio'} · 1RM est. (kg)`}</div>
+                <div style={{fontSize:22,fontWeight:700,fontFamily:T.mono,color:T.accent,marginTop:2}}>{Math.round(values[values.length-1])}{metric==='volume'?'kg':' kg'}</div>
+              </div>
+              {values.length>=2&&<div style={{color:values[values.length-1]>values[0]?T.green:T.red,fontSize:12,fontFamily:T.mono,alignSelf:'flex-start'}}>
+                {values[values.length-1]>values[0]?'↑':'↓'} {Math.abs(((values[values.length-1]-values[0])/values[0])*100).toFixed(1)}%
+              </div>}
+            </div>
+            <svg width="100%" height="80" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+              <defs><linearGradient id="gf" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={T.accent} stopOpacity="0.25"/><stop offset="100%" stopColor={T.accent} stopOpacity="0"/></linearGradient></defs>
+              {[0,.5,1].map((t,i)=><line key={i} x1="0" y1={t*H} x2={W} y2={t*H} stroke={T.border} strokeWidth="0.5"/>)}
+              <path d={`M ${pts.join(' L ')} L ${W},${H} L 0,${H} Z`} fill="url(#gf)"/>
+              <polyline points={pts.join(' ')} fill="none" stroke={T.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              {pts.map((p,i)=>{const[x,y]=p.split(',');return<circle key={i} cx={x} cy={y} r="2.5" fill={T.accent}/>;})}
+            </svg>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:6}}>
+              <span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono}}>{data[0]?.[0]?.slice(5)}</span>
+              <span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono}}>{data[data.length-1]?.[0]?.slice(5)}</span>
+            </div>
+          </>
+        ):(
+          <div style={{textAlign:'center',padding:'28px 0',color:T.textMuted,fontSize:13}}>
+            <div style={{fontSize:28,marginBottom:10}}>📊</div>
+            <div style={{color:T.textSub,fontWeight:600,marginBottom:6}}>Sin datos aún</div>
+            <div>Completa tu primer entrenamiento para ver tu progreso.</div>
+          </div>
+        )}
+      </div>
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:10}}>Records personales</div>
+        {topPRs.length===0?(
+          <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:20,textAlign:'center',color:T.textMuted,fontSize:13}}>Aún no tienes PRs registrados.</div>
+        ):(
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {topPRs.map(([id,pr])=>{
+              const exData=DB.exercises[id];
+              return(
+                <div key={id} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{color:T.accent}}><Icon.trophy/></div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,fontWeight:600,color:T.text}}>{exData?.name||id}</div>
+                    <div style={{fontSize:12,color:T.textMuted,fontFamily:T.mono}}>{pr.weight}kg × {pr.reps} reps</div>
+                  </div>
+                  <div style={{fontSize:13,color:T.green,fontFamily:T.mono,fontWeight:700}}>{Math.round(pr.est1rm)} kg</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px',marginBottom:20}}>
+        <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:12}}>Sesiones completadas</div>
+        <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+          {Array.from({length:12},(_, i)=>{
+            const weekAgo=new Date();weekAgo.setDate(weekAgo.getDate()-(11-i)*7);
+            const weekEnd=new Date(weekAgo);weekEnd.setDate(weekAgo.getDate()+7);
+            const count=sessions.filter(s=>{const d=new Date(s.date);return d>=weekAgo&&d<weekEnd;}).length;
+            const rate=Math.min(count/4,1);
+            return<div key={i} style={{flex:1,minWidth:18,height:32,borderRadius:4,background:rate>0.8?T.accent:rate>0.4?T.accent+'70':rate>0?T.accent+'30':T.bg3,title:`Semana ${i+1}`}}/>;
+          })}
+        </div>
+        <div style={{display:'flex',gap:14,marginTop:12}}>
+          {[['100%',T.accent],['~50%',T.accent+'70'],['<25%',T.accent+'30']].map(([l,c])=>(
+            <div key={l} style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:2,background:c}}/><span style={{fontSize:10,color:T.textMuted}}>{l}</span></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── PROFILE ──────────────────────────────────────────────────────────────────
+const ProfileScreen=({profile,apiKey,onUpdateApiKey,onReset})=>{
+  const[keyInput,setKeyInput]=useState(apiKey||'');
+  const[saved,setSaved]=useState(false);
+  const[showKey,setShowKey]=useState(false);
+  const bmi=profile.weight&&profile.height?(profile.weight/Math.pow(profile.height/100,2)).toFixed(1):'--';
+
+  const saveKey=()=>{
+    onUpdateApiKey(keyInput.trim());
+    setSaved(true);
+    setTimeout(()=>setSaved(false),2000);
+  };
+
+  return(
+    <div style={{height:'100%',overflowY:'auto',background:T.bg0,padding:'18px 20px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:22}}>
+        <div style={{width:60,height:60,borderRadius:'50%',background:T.accent+'20',border:`2px solid ${T.accent}44`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:26}}>⚡</div>
+        <div>
+          <h2 style={{fontSize:21,fontWeight:700,color:T.text,margin:0}}>{profile.name||'Atleta'}</h2>
+          <div style={{fontSize:12,color:T.textMuted,marginTop:2}}>{profile.experience==='advanced'?'Atleta Avanzado':profile.experience==='intermediate'?'Atleta Intermedio':'Atleta Principiante'}</div>
+          <div style={{marginTop:5}}><Badge>{profile.goal==='hybrid'?'⚡ Híbrido':profile.goal==='strength'?'🏋️ Fuerza':profile.goal==='hypertrophy'?'💪 Hipertrofia':'🏃 Resistencia'}</Badge></div>
+        </div>
+      </div>
+
+      <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:10}}>Biométrica</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:20}}>
+        {[{l:'Edad',v:profile.age,u:'años'},{l:'Peso',v:profile.weight,u:'kg'},{l:'Altura',v:profile.height,u:'cm'},{l:'IMC',v:bmi,u:'kg/m²'}].map((s,i)=>(
+          <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'11px 13px'}}>
+            <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>{s.l}</div>
+            <div style={{fontSize:19,fontWeight:700,fontFamily:T.mono,color:T.text,marginTop:2}}>{s.v||'--'}</div>
+            <div style={{fontSize:10,color:T.textMuted}}>{s.u}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:10}}>Configuración del plan</div>
+      <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,overflow:'hidden',marginBottom:20}}>
+        {[{l:'Días por semana',v:profile.daysPerWeek},{l:'Equipamiento',v:(profile.equipment||[]).join(', ')||'Gimnasio completo'},{l:'Objetivo',v:profile.goal==='hybrid'?'Atleta Híbrido':profile.goal==='strength'?'Fuerza Máxima':profile.goal==='hypertrophy'?'Hipertrofia':'Resistencia'}].map((row,i)=>(
+          <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'11px 14px',borderBottom:i<2?`1px solid ${T.border}`:'none'}}>
+            <span style={{fontSize:13,color:T.textMuted}}>{row.l}</span>
+            <span style={{fontSize:13,color:T.text,fontWeight:600,textAlign:'right',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{row.v}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:10}}>IA — Claude API</div>
+      <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'14px',marginBottom:8}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+          <Icon.key/>
+          <span style={{fontSize:13,color:T.textSub,flex:1}}>API Key de Anthropic</span>
+          {apiKey&&<Badge color={T.green}>Activa</Badge>}
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <input
+            type={showKey?'text':'password'}
+            value={keyInput}
+            onChange={e=>setKeyInput(e.target.value)}
+            placeholder="sk-ant-api03-..."
+            style={{flex:1,background:T.bg3,border:`1px solid ${T.border}`,borderRadius:8,padding:'10px 12px',color:T.text,fontSize:13,fontFamily:T.mono,outline:'none'}}
+            onFocus={e=>e.target.style.borderColor=T.accent}
+            onBlur={e=>e.target.style.borderColor=T.border}
+          />
+          <button onClick={()=>setShowKey(v=>!v)} style={{background:T.bg3,border:`1px solid ${T.border}`,borderRadius:8,padding:'0 12px',color:T.textSub,cursor:'pointer',fontSize:12,fontFamily:T.font}}>{showKey?'Ocultar':'Ver'}</button>
+        </div>
+        <button onClick={saveKey} style={{width:'100%',marginTop:10,padding:'10px',borderRadius:8,background:saved?T.green+'20':T.accent+'20',border:`1px solid ${saved?T.green+'44':T.accent+'44'}`,color:saved?T.green:T.accent,cursor:'pointer',fontSize:13,fontWeight:700,fontFamily:T.font,transition:'all .2s'}}>
+          {saved?'✓ Guardada':'Guardar clave'}
+        </button>
+        <div style={{marginTop:10,fontSize:11,color:T.textMuted,lineHeight:1.6}}>
+          Con tu API Key, Claude analiza fotos de comida, calcula calorías y genera tu reporte semanal. Obtenla en <span style={{color:T.accent}}>console.anthropic.com</span>
+        </div>
+      </div>
+
+      <div style={{height:10}}/>
+      <button onClick={onReset} style={{width:'100%',padding:13,borderRadius:12,background:'none',border:`1px solid ${T.border}`,color:T.textMuted,cursor:'pointer',fontSize:13,fontFamily:T.font,marginBottom:20}}>Reiniciar onboarding</button>
+    </div>
+  );
+};
+
+// ─── WEEKLY RECAP MODAL ───────────────────────────────────────────────────────
+const WeeklyRecap=({profile,goals,nutrition,sessions,apiKey,onClose})=>{
+  const[loading,setLoading]=useState(false);
+  const[ai,setAi]=useState(null);
+  const[err,setErr]=useState(false);
+  const week=lastNDates(7).map(d=>nutrition[d]||{date:d,kcal:0,protein:0,sleep:0});
+  const avg=k=>{const valid=week.filter(d=>d[k]>0);return valid.length?Math.round(valid.reduce((a,d)=>a+d[k],0)/valid.length):0;};
+  const avgKcal=avg('kcal'),avgProt=avg('protein'),avgSleep=Math.round(avg('sleep')*10)/10;
+  const weekStart=new Date();weekStart.setDate(weekStart.getDate()-7);
+  const wsessions=sessions.filter(s=>new Date(s.date)>=weekStart).length;
+
+  const kcalDiff=avgKcal-goals.kcal;
+  const protDiff=avgProt-goals.protein;
+  const sleepDiff=avgSleep-7.5;
+
+  const fbCal=avgKcal===0?'Sin datos. Empieza a registrar tus comidas.':Math.abs(kcalDiff)<150?'Estás en tu objetivo de calorías. Mantén la consistencia.':kcalDiff<-150?`Comiste ${Math.abs(kcalDiff)} kcal MENOS de tu objetivo. Si tu meta es ganar masa, añade un snack post-entrenamiento de ~250 kcal.`:`Comiste ${kcalDiff} kcal MÁS de tu objetivo. Si quieres mantener composición, reduce porciones de carbohidratos en cenas.`;
+  const fbProt=avgProt===0?'Sin datos de proteína.':protDiff>=-10?'Proteína bien distribuida.':`Te faltan ~${Math.abs(protDiff)}g de proteína al día. Añade 1 ración extra (huevos, pollo, batido o lácteos).`;
+  const fbSleep=avgSleep===0?'Sin datos de sueño.':sleepDiff>=-0.5?'Sueño suficiente para recuperación óptima.':sleepDiff<-1.5?`Solo dormiste ${avgSleep}h promedio. CRÍTICO — la testosterona y recuperación caen drásticamente bajo 7h. Acuéstate 1h antes esta semana.`:`Necesitas ~30-60 min más de sueño. Apaga pantallas 30 min antes de dormir.`;
+
+  const generateAI=async()=>{
+    setLoading(true);setErr(false);
+    const result=await AI.getWeeklyAnalysis(profile,goals,week,wsessions,apiKey);
+    if(result){setAi(result);}else{setErr(true);}
+    setLoading(false);
+  };
+
+  return(
+    <div style={{position:'absolute',inset:0,background:T.bg0,zIndex:300,display:'flex',flexDirection:'column',animation:'slideUp .25s ease'}}>
+      <div style={{padding:'16px 20px',borderBottom:`1px solid ${T.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>Análisis semanal</div>
+          <div style={{fontSize:16,fontWeight:700,color:T.text,marginTop:2}}>Últimos 7 días</div>
+        </div>
+        <button onClick={onClose} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:T.textSub}}><Icon.x/></button>
+      </div>
+
+      <div style={{flex:1,overflowY:'auto',padding:'16px 20px 24px'}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:18}}>
+          {[{l:'Cal/día',v:avgKcal||'--',u:`/${goals.kcal}`,c:T.accent},{l:'Prot/día',v:avgProt?avgProt+'g':'--',u:`/${goals.protein}g`,c:T.green},{l:'Sueño',v:avgSleep||'--',u:'h/noche',c:T.blue}].map((s,i)=>(
+            <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'10px 8px',textAlign:'center'}}>
+              <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>{s.l}</div>
+              <div style={{fontSize:18,fontWeight:700,fontFamily:T.mono,color:s.c,marginTop:3}}>{s.v}</div>
+              <div style={{fontSize:9,color:T.textMuted}}>{s.u}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'12px 14px',marginBottom:10}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <div style={{color:T.accent}}><Icon.flame/></div>
+            <span style={{fontSize:13,fontWeight:700,color:T.text}}>Calorías</span>
+          </div>
+          <div style={{fontSize:12,color:T.textSub,lineHeight:1.55}}>{fbCal}</div>
+        </div>
+
+        <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'12px 14px',marginBottom:10}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <div style={{color:T.green}}><Icon.bolt/></div>
+            <span style={{fontSize:13,fontWeight:700,color:T.text}}>Proteína</span>
+          </div>
+          <div style={{fontSize:12,color:T.textSub,lineHeight:1.55}}>{fbProt}</div>
+        </div>
+
+        <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'12px 14px',marginBottom:10}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <div style={{color:T.blue}}><Icon.moon/></div>
+            <span style={{fontSize:13,fontWeight:700,color:T.text}}>Sueño</span>
+          </div>
+          <div style={{fontSize:12,color:T.textSub,lineHeight:1.55}}>{fbSleep}</div>
+        </div>
+
+        <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'12px 14px',marginBottom:18}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <div style={{color:T.accent}}><Icon.fire/></div>
+            <span style={{fontSize:13,fontWeight:700,color:T.text}}>Entrenamientos</span>
+          </div>
+          <div style={{fontSize:12,color:T.textSub,lineHeight:1.55}}>{wsessions===0?'Sin entrenamientos esta semana. Vuelve a la rutina cuanto antes.':`Completaste ${wsessions}/${profile.daysPerWeek} entrenamientos. ${wsessions>=profile.daysPerWeek?'Adherencia perfecta.':wsessions>=profile.daysPerWeek-1?'Casi perfecto, mantén la racha.':'Adherencia baja. La consistencia es el factor #1 del progreso.'}`}</div>
+        </div>
+
+        {ai&&(
+          <div style={{background:T.accent+'10',border:`1px solid ${T.accent}44`,borderRadius:10,padding:'14px',marginBottom:14}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+              <span style={{fontSize:16}}>⚡</span>
+              <span style={{fontSize:13,fontWeight:700,color:T.accent,fontFamily:T.mono,letterSpacing:'0.05em',textTransform:'uppercase'}}>Análisis Claude IA</span>
+            </div>
+            <div style={{fontSize:13,color:T.text,lineHeight:1.6,marginBottom:12,fontWeight:600}}>{ai.summary}</div>
+            <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:12}}>
+              <div><span style={{fontSize:10,color:T.accent,fontFamily:T.mono,textTransform:'uppercase'}}>Calorías </span><span style={{fontSize:12,color:T.textSub}}>— {ai.calories}</span></div>
+              <div><span style={{fontSize:10,color:T.accent,fontFamily:T.mono,textTransform:'uppercase'}}>Proteína </span><span style={{fontSize:12,color:T.textSub}}>— {ai.protein}</span></div>
+              <div><span style={{fontSize:10,color:T.accent,fontFamily:T.mono,textTransform:'uppercase'}}>Sueño </span><span style={{fontSize:12,color:T.textSub}}>— {ai.sleep}</span></div>
+            </div>
+            <div style={{borderTop:`1px solid ${T.accent}22`,paddingTop:10}}>
+              <div style={{fontSize:10,color:T.accent,fontFamily:T.mono,textTransform:'uppercase',marginBottom:6}}>Acciones esta semana</div>
+              {(ai.actions||[]).map((a,i)=>(
+                <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:5}}>
+                  <span style={{color:T.accent,fontFamily:T.mono,fontSize:11,fontWeight:700}}>{i+1}.</span>
+                  <span style={{fontSize:12,color:T.text,lineHeight:1.5}}>{a}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!ai&&apiKey&&(
+          <button onClick={generateAI} disabled={loading} style={{width:'100%',padding:'14px',borderRadius:12,background:err?T.red+'20':T.accent,color:err?T.red:T.bg0,border:err?`1px solid ${T.red}44`:'none',cursor:loading?'wait':'pointer',fontSize:14,fontWeight:700,fontFamily:T.font,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            {loading?(<><div style={{width:14,height:14,borderRadius:'50%',border:`2px solid ${T.bg0}`,borderTopColor:'transparent',animation:'spin 1s linear infinite'}}/>Analizando con IA...</>):err?'✗ Error — reintenta':'⚡ Análisis profundo con Claude IA'}
+          </button>
+        )}
+        {!apiKey&&(
+          <div style={{background:T.bg2,border:`1px dashed ${T.border}`,borderRadius:10,padding:'12px 14px',textAlign:'center'}}>
+            <div style={{fontSize:11,color:T.textMuted,lineHeight:1.55}}>Activa tu API Key en Perfil para análisis personalizado con Claude IA.</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── NUTRITION SCREEN ─────────────────────────────────────────────────────────
+const NutritionScreen=({profile,sessions,apiKey})=>{
+  const sex=S.get(S.SEX,'male');
+  const goals=useMemo(()=>calcDailyGoals(profile,sex),[profile,sex]);
+  const[nutrition,setNutrition]=useState(()=>S.get(S.NUTRITION,{}));
+  const[showRecap,setShowRecap]=useState(false);
+  const[foodDesc,setFoodDesc]=useState('');
+  const[parsing,setParsing]=useState(false);
+  const[parsed,setParsed]=useState(null);
+  const[parseErr,setParseErr]=useState(false);
+  const[photoPreview,setPhotoPreview]=useState(null);
+  const fileRef=useRef(null);
+  const today=todayKey();
+  const todayLog=nutrition[today]||{date:today,kcal:0,protein:0,sleep:0,sleepQuality:0};
+
+  const update=(field,value)=>{
+    const newLog={...todayLog,[field]:value,date:today};
+    const newNut={...nutrition,[today]:newLog};
+    setNutrition(newNut);S.set(S.NUTRITION,newNut);
+  };
+  const quickAdd=(kcal,prot)=>{
+    setNutrition(n=>{const cur=n[today]||{date:today,kcal:0,protein:0,sleep:0,sleepQuality:0};const updated={...cur,kcal:(cur.kcal||0)+kcal,protein:(cur.protein||0)+prot,date:today};const all={...n,[today]:updated};S.set(S.NUTRITION,all);return all;});
+  };
+
+  const parseFood=async()=>{
+    if(!foodDesc.trim())return;
+    if(!apiKey){setParseErr(true);setTimeout(()=>setParseErr(false),3000);return;}
+    setParsing(true);setParseErr(false);
+    const result=await AI.parseFoods(foodDesc.trim(),apiKey);
+    if(result&&result.kcal){setParsed(result);}else{setParseErr(true);setTimeout(()=>setParseErr(false),3000);}
+    setParsing(false);
+  };
+  const acceptParsed=()=>{
+    quickAdd(parsed.kcal,parsed.protein);
+    setParsed(null);setFoodDesc('');setPhotoPreview(null);
+  };
+  const cancelParsed=()=>{
+    setParsed(null);setPhotoPreview(null);
+  };
+
+  const handlePhoto=async(e)=>{
+    const file=e.target.files?.[0];
+    e.target.value='';
+    if(!file)return;
+    if(!apiKey){setParseErr(true);setTimeout(()=>setParseErr(false),3000);return;}
+    setParsing(true);setParseErr(false);
+    try{
+      const{base64,dataUrl}=await imageToBase64(file,1024);
+      setPhotoPreview(dataUrl);
+      const result=await AI.parseFoodImage(base64,apiKey);
+      if(result&&result.kcal){setParsed(result);}else{setParseErr(true);setPhotoPreview(null);setTimeout(()=>setParseErr(false),3000);}
+    }catch{setParseErr(true);setPhotoPreview(null);setTimeout(()=>setParseErr(false),3000);}
+    setParsing(false);
+  };
+
+  const Card=({title,icon,iconColor,current,goal,unit,step,onChange,color=T.accent})=>{
+    const pct=Math.min(100,Math.round((current/goal)*100));
+    const status=pct<70?'low':pct>110?'over':'good';
+    return(
+      <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px',marginBottom:10}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{color:iconColor}}>{icon}</div>
+            <span style={{fontSize:13,color:T.textSub,fontWeight:600}}>{title}</span>
+          </div>
+          <Badge color={status==='good'?T.green:status==='over'?T.red:T.textMuted}>{status==='good'?'En meta':status==='over'?'Pasado':'Bajo'}</Badge>
+        </div>
+        <div style={{display:'flex',alignItems:'baseline',gap:6,marginBottom:8}}>
+          <span style={{fontSize:28,fontWeight:700,fontFamily:T.mono,color:T.text}}>{current||0}</span>
+          <span style={{fontSize:13,color:T.textMuted,fontFamily:T.mono}}>/ {goal} {unit}</span>
+        </div>
+        <ProgressBar value={current||0} max={goal} color={color} height={6}/>
+        <div style={{display:'flex',gap:8,marginTop:12,justifyContent:'center'}}>
+          <button onClick={()=>onChange(Math.max(0,(current||0)-step))} style={{flex:1,height:36,borderRadius:8,background:T.bg3,border:`1px solid ${T.border}`,color:T.textSub,fontSize:14,fontWeight:700,fontFamily:T.mono,cursor:'pointer'}}>−{step}</button>
+          <button onClick={()=>onChange((current||0)+step)} style={{flex:1,height:36,borderRadius:8,background:color+'18',border:`1px solid ${color}44`,color,fontSize:14,fontWeight:700,fontFamily:T.mono,cursor:'pointer'}}>+{step}</button>
+        </div>
+      </div>
+    );
+  };
+
+  return(
+    <div style={{height:'100%',overflowY:'auto',background:T.bg0,padding:'18px 20px',position:'relative'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:18}}>
+        <div>
+          <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>Hoy</div>
+          <h2 style={{fontSize:24,color:T.text,margin:'4px 0 0',fontWeight:700}}>Nutrición</h2>
+        </div>
+        <button onClick={()=>setShowRecap(true)} style={{background:T.accent+'18',border:`1px solid ${T.accent}44`,borderRadius:10,padding:'8px 12px',color:T.accent,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:T.font,display:'flex',alignItems:'center',gap:6}}>
+          📊 Análisis semanal
+        </button>
+      </div>
+
+      <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'10px 14px',marginBottom:14,display:'flex',gap:14}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>BMR</div>
+          <div style={{fontSize:14,fontWeight:700,fontFamily:T.mono,color:T.text}}>{goals.bmr}</div>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>TDEE</div>
+          <div style={{fontSize:14,fontWeight:700,fontFamily:T.mono,color:T.text}}>{goals.tdee}</div>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>Agua</div>
+          <div style={{fontSize:14,fontWeight:700,fontFamily:T.mono,color:T.text}}>{goals.water}L</div>
+        </div>
+      </div>
+
+      <Card title="Calorías" icon={<Icon.flame/>} iconColor={T.accent} current={todayLog.kcal} goal={goals.kcal} unit="kcal" step={50} onChange={v=>update('kcal',v)} color={T.accent}/>
+
+      <Card title="Proteína" icon={<Icon.bolt/>} iconColor={T.green} current={todayLog.protein} goal={goals.protein} unit="g" step={5} onChange={v=>update('protein',v)} color={T.green}/>
+
+      <div style={{background:`linear-gradient(135deg, ${T.accent}15, ${T.accent}05)`,border:`1px solid ${T.accent}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+          <span style={{fontSize:16}}>⚡</span>
+          <span style={{fontSize:12,fontWeight:700,color:T.accent,fontFamily:T.mono,letterSpacing:'0.05em',textTransform:'uppercase'}}>Calcula con Claude IA</span>
+        </div>
+        <div style={{fontSize:11,color:T.textSub,marginBottom:10,lineHeight:1.5}}>Toma una foto del plato o describe lo que comiste — Claude estima calorías y proteína.</div>
+        <input type="file" accept="image/*" capture="environment" ref={fileRef} onChange={handlePhoto} style={{display:'none'}}/>
+        <button onClick={()=>fileRef.current?.click()} disabled={parsing} style={{width:'100%',marginBottom:10,padding:'12px',borderRadius:10,background:T.accent,color:T.bg0,border:'none',cursor:parsing?'wait':'pointer',fontSize:14,fontWeight:700,fontFamily:T.font,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+          📸 Tomar foto del plato
+        </button>
+        {photoPreview&&(
+          <div style={{marginBottom:10,position:'relative',borderRadius:8,overflow:'hidden',border:`1px solid ${T.border}`}}>
+            <img src={photoPreview} alt="Foto del plato" style={{width:'100%',display:'block',maxHeight:180,objectFit:'cover'}}/>
+            {parsing&&<div style={{position:'absolute',inset:0,background:T.bg0+'cc',display:'flex',alignItems:'center',justifyContent:'center',gap:8,color:T.accent,fontSize:12,fontWeight:700,fontFamily:T.mono}}>
+              <div style={{width:14,height:14,borderRadius:'50%',border:`2px solid ${T.accent}`,borderTopColor:'transparent',animation:'spin 1s linear infinite'}}/>
+              Analizando foto...
+            </div>}
+          </div>
+        )}
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+          <div style={{flex:1,height:1,background:T.border}}/>
+          <span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>o describe</span>
+          <div style={{flex:1,height:1,background:T.border}}/>
+        </div>
+        <textarea
+          value={foodDesc}
+          onChange={e=>setFoodDesc(e.target.value)}
+          placeholder="ej: 3 huevos revueltos, tostada integral con aguacate, café con leche"
+          rows={2}
+          style={{width:'100%',background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,padding:'10px 12px',color:T.text,fontSize:13,fontFamily:T.font,outline:'none',resize:'vertical',minHeight:54,boxSizing:'border-box'}}
+          onFocus={e=>e.target.style.borderColor=T.accent}
+          onBlur={e=>e.target.style.borderColor=T.border}
+        />
+        <button onClick={parseFood} disabled={parsing||!foodDesc.trim()} style={{width:'100%',marginTop:8,padding:'11px',borderRadius:8,background:parseErr?T.red+'20':parsing||!foodDesc.trim()?T.bg3:T.accent,color:parseErr?T.red:parsing||!foodDesc.trim()?T.textMuted:T.bg0,border:parseErr?`1px solid ${T.red}44`:'none',cursor:parsing||!foodDesc.trim()?'not-allowed':'pointer',fontSize:13,fontWeight:700,fontFamily:T.font,display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}>
+          {parsing?(<><div style={{width:13,height:13,borderRadius:'50%',border:`2px solid ${T.bg0}`,borderTopColor:'transparent',animation:'spin 1s linear infinite'}}/>Analizando...</>):parseErr?(!apiKey?'Necesitas API Key (en Perfil)':'Error — reintenta'):'⚡ Calcular calorías'}
+        </button>
+      </div>
+
+      {parsed&&(
+        <div style={{background:T.bg2,border:`1px solid ${T.accent}66`,borderRadius:12,padding:'14px',marginBottom:14,animation:'slideUp .25s ease'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <span style={{fontSize:12,fontWeight:700,color:T.accent,fontFamily:T.mono,textTransform:'uppercase'}}>Estimación IA</span>
+            <Badge color={parsed.confidence==='alta'?T.green:parsed.confidence==='baja'?T.red:T.blue}>{parsed.confidence}</Badge>
+          </div>
+          <div style={{display:'flex',gap:14,marginBottom:12}}>
+            <div style={{flex:1,background:T.bg3,borderRadius:8,padding:'10px 12px',textAlign:'center'}}>
+              <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>Calorías</div>
+              <div style={{fontSize:22,fontWeight:700,fontFamily:T.mono,color:T.accent,marginTop:2}}>{parsed.kcal}</div>
+            </div>
+            <div style={{flex:1,background:T.bg3,borderRadius:8,padding:'10px 12px',textAlign:'center'}}>
+              <div style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase'}}>Proteína</div>
+              <div style={{fontSize:22,fontWeight:700,fontFamily:T.mono,color:T.green,marginTop:2}}>{parsed.protein}g</div>
+            </div>
+          </div>
+          {parsed.items&&parsed.items.length>0&&(
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',marginBottom:6}}>Desglose</div>
+              {parsed.items.map((it,i)=>(
+                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:i<parsed.items.length-1?`1px solid ${T.border}`:'none'}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,color:T.text,fontWeight:500}}>{it.name}</div>
+                    <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>{it.amount}</div>
+                  </div>
+                  <div style={{fontSize:11,color:T.textSub,fontFamily:T.mono,textAlign:'right'}}>{it.kcal} kcal · {it.protein}g</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {parsed.notes&&<div style={{fontSize:11,color:T.textMuted,fontStyle:'italic',marginBottom:12,lineHeight:1.5}}>💡 {parsed.notes}</div>}
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={cancelParsed} style={{flex:1,padding:'10px',borderRadius:8,background:T.bg3,border:`1px solid ${T.border}`,color:T.textSub,cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:T.font}}>Cancelar</button>
+            <button onClick={acceptParsed} style={{flex:2,padding:'10px',borderRadius:8,background:T.green,border:'none',color:T.bg0,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:T.font}}>✓ Añadir a hoy</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:8,marginTop:8}}>Atajos rápidos</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:14}}>
+        {[{l:'Snack',k:200,p:15},{l:'Comida ligera',k:400,p:25},{l:'Comida principal',k:650,p:40},{l:'Batido proteico',k:180,p:30}].map((q,i)=>(
+          <button key={i} onClick={()=>quickAdd(q.k,q.p)} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'10px',cursor:'pointer',textAlign:'left'}}>
+            <div style={{fontSize:12,color:T.text,fontWeight:600}}>+ {q.l}</div>
+            <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,marginTop:2}}>{q.k} kcal · {q.p}g prot</div>
+          </button>
+        ))}
+      </div>
+
+      <Card title="Sueño anoche" icon={<Icon.moon/>} iconColor={T.blue} current={todayLog.sleep} goal={8} unit="h" step={0.5} onChange={v=>update('sleep',Math.round(v*2)/2)} color={T.blue}/>
+
+      <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'12px 14px',marginBottom:10}}>
+        <div style={{fontSize:11,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',marginBottom:8}}>Calidad del sueño</div>
+        <div style={{display:'flex',gap:6}}>
+          {[1,2,3,4,5].map(n=>(
+            <button key={n} onClick={()=>update('sleepQuality',n)} style={{flex:1,height:38,borderRadius:8,background:todayLog.sleepQuality>=n?T.blue+'30':T.bg3,border:`1px solid ${todayLog.sleepQuality>=n?T.blue:T.border}`,color:todayLog.sleepQuality>=n?T.blue:T.textMuted,fontSize:18,cursor:'pointer'}}>★</button>
+          ))}
+        </div>
+      </div>
+
+      <button onClick={()=>setShowRecap(true)} style={{width:'100%',padding:'14px',borderRadius:12,background:T.accent,color:T.bg0,border:'none',fontSize:14,fontWeight:700,fontFamily:T.font,cursor:'pointer',marginTop:8,marginBottom:20,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+        📊 Ver análisis semanal completo
+      </button>
+
+      {showRecap&&<WeeklyRecap profile={profile} goals={goals} nutrition={nutrition} sessions={sessions} apiKey={apiKey} onClose={()=>setShowRecap(false)}/>}
+    </div>
+  );
+};
+
+// ─── BOTTOM NAV ───────────────────────────────────────────────────────────────
+const BottomNav=({current,onChange})=>(
+  <div style={{display:'flex',borderTop:`1px solid ${T.border}`,background:T.bg0,padding:'7px 0 3px'}}>
+    {[{id:'dashboard',icon:Icon.home,l:'Inicio'},{id:'progress',icon:Icon.chart,l:'Progreso'},{id:'nutrition',icon:Icon.apple,l:'Nutrición'},{id:'profile',icon:Icon.user,l:'Perfil'}].map(tab=>(
+      <button key={tab.id} onClick={()=>onChange(tab.id)} style={{flex:1,background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'5px 0'}}>
+        <div style={{color:current===tab.id?T.accent:T.textMuted,transition:'color .15s'}}><tab.icon/></div>
+        <span style={{fontSize:9,color:current===tab.id?T.accent:T.textMuted,fontFamily:T.mono,transition:'color .15s'}}>{tab.l}</span>
+      </button>
+    ))}
+  </div>
+);
+
+// ─── STATUS BAR ───────────────────────────────────────────────────────────────
+const StatusBar=()=>{
+  const[time,setTime]=useState(()=>{const d=new Date();return`${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;});
+  useEffect(()=>{const t=setInterval(()=>{const d=new Date();setTime(`${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`);},10000);return()=>clearInterval(t);},[]);
+  return(
+    <div style={{height:48,display:'flex',alignItems:'flex-end',justifyContent:'space-between',padding:'0 26px 7px',flexShrink:0,position:'relative',zIndex:10}}>
+      <div style={{position:'absolute',top:10,left:'50%',transform:'translateX(-50%)',width:118,height:32,borderRadius:18,background:'#000'}}/>
+      <span style={{fontSize:14,fontWeight:700,color:T.text,fontFamily:T.mono,zIndex:1}}>{time}</span>
+      <div style={{display:'flex',gap:5,alignItems:'center',zIndex:1}}>
+        <svg width="17" height="12" viewBox="0 0 17 12" fill={T.text}><rect x="0" y="7" width="3" height="5" rx="1" opacity="0.4"/><rect x="4.5" y="4.5" width="3" height="7.5" rx="1" opacity="0.6"/><rect x="9" y="2" width="3" height="10" rx="1" opacity="0.8"/><rect x="13.5" y="0" width="3" height="12" rx="1"/></svg>
+        <svg width="15" height="11" viewBox="0 0 15 11" fill="none" stroke={T.text} strokeWidth="1.4" strokeLinecap="round"><path d="M1 4C3.2 1.7 11.8 1.7 14 4" opacity="0.4"/><path d="M3 6.5C4.3 5.1 10.7 5.1 12 6.5" opacity="0.7"/><path d="M5.5 9C6.2 8.1 8.8 8.1 9.5 9"/><circle cx="7.5" cy="10.5" r=".8" fill={T.text} stroke="none"/></svg>
+        <div style={{display:'flex',alignItems:'center',gap:1}}>
+          <div style={{width:22,height:11,borderRadius:3,border:`1px solid rgba(240,237,232,.5)`,padding:1.5,display:'flex',alignItems:'center'}}>
+            <div style={{width:'80%',height:'100%',background:T.text,borderRadius:1}}/>
+          </div>
+          <div style={{width:2,height:5,background:'rgba(240,237,232,.5)',borderRadius:1}}/>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── RESUME BANNER ────────────────────────────────────────────────────────────
+const ResumeBanner=({active,onContinue,onDiscard})=>{
+  const mins=Math.floor((Date.now()-active.startTime)/60000);
+  const done=(active.sets||[]).flat().filter(s=>s.done).length;
+  const total=(active.sets||[]).flat().length;
+  return(
+    <div style={{position:'absolute',top:0,left:0,right:0,zIndex:90,padding:'12px 14px',background:T.accent+'18',border:`1px solid ${T.accent}66`,borderTop:'none',borderLeft:'none',borderRight:'none',display:'flex',alignItems:'center',gap:10,animation:'slideUp .25s ease'}}>
+      <div style={{fontSize:20}}>🏋️</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:1}}>Entrenamiento en curso</div>
+        <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>{active.workout?.label||''} · hace {mins} min · {done}/{total} sets</div>
+      </div>
+      <button onClick={onDiscard} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:8,padding:'6px 10px',color:T.textMuted,cursor:'pointer',fontSize:11,fontFamily:T.font}}>Descartar</button>
+      <button onClick={onContinue} style={{background:T.accent,border:'none',borderRadius:8,padding:'6px 12px',color:T.bg0,cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:T.font}}>Continuar</button>
+    </div>
+  );
+};
+
+// ─── APP ──────────────────────────────────────────────────────────────────────
+const App=()=>{
+  const[screen,setScreen]=useState('loading');
+  const[tab,setTab]=useState('dashboard');
+  const[profile,setProfile]=useState(null);
+  const[plan,setPlan]=useState(null);
+  const[sessions,setSessions]=useState([]);
+  const[apiKey,setApiKey]=useState('');
+  const[activeWorkout,setActiveWorkout]=useState(null);
+  const[savedActive,setSavedActive]=useState(null);
+  const[lastSession,setLastSession]=useState(null);
+
+  useEffect(()=>{
+    const p=S.get(S.PROFILE);
+    const pl=S.get(S.PLAN);
+    const sess=S.get(S.SESSIONS,[]);
+    const key=S.get(S.APIKEY,'');
+    const active=cleanStaleActive();
+    setApiKey(key||'');
+    setSessions(sess||[]);
+    if(active&&active.workout&&active.startTime){setSavedActive(active);}
+    if(p&&pl){setProfile(p);setPlan(pl);setScreen('main');}
+    else{setScreen('onboarding');}
+  },[]);
+
+  const continueActive=()=>{
+    if(!savedActive)return;
+    setActiveWorkout(savedActive.workout);
+    setScreen('workout');
+  };
+  const discardActive=()=>{
+    S.set(S.ACTIVE,null);
+    setSavedActive(null);
+  };
+
+  const handleOnboardingComplete=(form,generatedPlan)=>{
+    S.set(S.PROFILE,form);S.set(S.PLAN,generatedPlan);
+    setProfile(form);setPlan(generatedPlan);setScreen('main');
+  };
+
+  const handleUpdateApiKey=(key)=>{
+    S.set(S.APIKEY,key);setApiKey(key);
+  };
+
+  const handleStartWorkout=(workoutDay)=>{
+    // Si había uno activo previo, lo descartamos al empezar uno nuevo
+    if(savedActive){S.set(S.ACTIVE,null);setSavedActive(null);}
+    setActiveWorkout(workoutDay);setScreen('workout');
+  };
+
+  const handleFinishWorkout=(sessionData)=>{
+    const session={...sessionData,id:Date.now(),date:new Date().toISOString()};
+    const newSessions=[...sessions,session];
+    setSessions(newSessions);S.set(S.SESSIONS,newSessions);
+    S.set(S.ACTIVE,null);setSavedActive(null);
+    setLastSession(session);setActiveWorkout(null);setScreen('done');
+  };
+
+  const handleReset=()=>{
+    localStorage.clear();setProfile(null);setPlan(null);setSessions([]);setApiKey('');setScreen('onboarding');
+  };
+
+  const handleUpdatePlan=(newPlan)=>{
+    S.set(S.PLAN,newPlan);setPlan(newPlan);
+  };
+
+  const navigate=(t)=>{setTab(t);};
+
+  if(screen==='loading')return(
+    <div style={{width:'100%',height:'100%',background:T.bg0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div style={{width:40,height:40,borderRadius:'50%',border:`2px solid ${T.border}`,borderTopColor:T.accent,animation:'spin 1s linear infinite'}}/>
+    </div>
+  );
+
+  const renderContent=()=>{
+    if(screen==='workout'&&activeWorkout)return<WorkoutScreen workout={activeWorkout} profile={profile} apiKey={apiKey} sessions={sessions} onFinish={handleFinishWorkout} savedState={savedActive}/>;
+    if(screen==='done'&&lastSession)return<WorkoutDoneScreen session={lastSession} onClose={()=>{setScreen('main');setTab('dashboard');}}/>;
+    if(tab==='dashboard')return<DashboardScreen profile={profile} plan={plan} sessions={sessions} onStartWorkout={handleStartWorkout} onUpdatePlan={handleUpdatePlan}/>;
+    if(tab==='progress')return<ProgressScreen sessions={sessions} profile={profile}/>;
+    if(tab==='nutrition')return<NutritionScreen profile={profile} sessions={sessions} apiKey={apiKey}/>;
+    if(tab==='profile')return<ProfileScreen profile={profile} apiKey={apiKey} onUpdateApiKey={handleUpdateApiKey} onReset={handleReset}/>;
+  };
+
+  return(
+    <div style={{width:'100%',height:'100%',background:T.bg0,position:'relative',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {screen==='onboarding'?(
+        <OnboardingScreen onComplete={handleOnboardingComplete}/>
+      ):(
+        <>
+          <div style={{flex:1,overflow:'hidden',position:'relative'}}>
+            {savedActive&&screen==='main'&&tab==='dashboard'&&<ResumeBanner active={savedActive} onContinue={continueActive} onDiscard={discardActive}/>}
+            {renderContent()}
+          </div>
+          {screen!=='workout'&&screen!=='done'&&<BottomNav current={tab} onChange={navigate}/>}
+        </>
+      )}
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
