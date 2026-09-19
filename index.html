@@ -154,7 +154,7 @@ const S={
   get:(k,fb=null)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??fb;}catch{return fb;}},
   set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),
   PROFILE:'gt_profile',PLAN:'gt_plan',SESSIONS:'gt_sessions',APIKEY:'gt_apikey',
-  NUTRITION:'gt_nutrition',SEX:'gt_sex',ACTIVE:'gt_active',CUSTOM:'gt_custom',
+  NUTRITION:'gt_nutrition',SEX:'gt_sex',ACTIVE:'gt_active',CUSTOM:'gt_custom',MAXOVERRIDES:'gt_maxoverrides',
 };
 
 // Limpia entrenamientos activos de hace más de 18 horas (probable que se olvidaran)
@@ -548,6 +548,8 @@ function calcGlobalStats(sessions){
 }
 
 // Máximo de la sesión anterior para un ejercicio (referencia "¿cuánto cargué la última vez?")
+// Usa 1RM estimado (Epley) para comparar: peso × (1 + reps/30)
+function epley(w,r){return(w>0&&r>0)?w*(1+r/30):0;}
 function lastSessionMax(sessions,exId){
   const sorted=[...sessions].sort((a,b)=>new Date(b.date)-new Date(a.date));
   for(const s of sorted){
@@ -560,13 +562,19 @@ function lastSessionMax(sessions,exId){
       const time=Math.max(0,...done.map(st=>st.reps||0));
       if(dist>0||time>0)return{cardio:true,dist,time,date:s.date};
     }else{
-      const weighted=done.filter(st=>st.weight>0);
+      const weighted=done.filter(st=>st.weight>0&&st.reps>0);
       if(!weighted.length)continue;
-      const top=weighted.reduce((a,st)=>st.weight>a.weight?st:a,weighted[0]);
-      return{cardio:false,weight:top.weight,reps:top.reps,date:s.date};
+      const top=weighted.reduce((a,st)=>epley(st.weight,st.reps)>epley(a.weight,a.reps)?st:a,weighted[0]);
+      return{cardio:false,weight:top.weight,reps:top.reps,est1rm:Math.round(epley(top.weight,top.reps)*10)/10,date:s.date};
     }
   }
   return null;
+}
+function getMaxOverride(exId){return S.get(S.MAXOVERRIDES,{})[exId]||null;}
+function setMaxOverride(exId,data){
+  const all=S.get(S.MAXOVERRIDES,{});
+  if(data===null)delete all[exId];else all[exId]=data;
+  S.set(S.MAXOVERRIDES,all);
 }
 function daysAgoLabel(dateStr){
   const d=Math.floor((Date.now()-new Date(dateStr))/(1000*60*60*24));
@@ -578,13 +586,67 @@ function daysAgoLabel(dateStr){
 }
 
 // Barra de referencia: peso máximo de la última sesión vs lo que llevas hoy
+// Compara usando 1RM estimado (Epley) para tener en cuenta peso + reps
 const LastWeightBar=({sessions,exId,currentSets})=>{
-  const last=lastSessionMax(sessions,exId);
-  if(!last){
+  const[editing,setEditing]=useState(false);
+  const[editW,setEditW]=useState('');
+  const[editR,setEditR]=useState('');
+  const[overrideTick,setOverrideTick]=useState(0);
+
+  const override=getMaxOverride(exId);
+  const autoLast=lastSessionMax(sessions,exId);
+  const last=override
+    ?{cardio:false,weight:override.weight,reps:override.reps,est1rm:Math.round(epley(override.weight,override.reps)*10)/10,date:null,manual:true}
+    :autoLast;
+
+  const handleSaveOverride=()=>{
+    const w=parseFloat(editW);
+    const r=parseInt(editR);
+    if(!w||w<=0||!r||r<=0)return;
+    setMaxOverride(exId,{weight:w,reps:r});
+    setEditing(false);
+    setOverrideTick(t=>t+1);
+  };
+  const handleClearOverride=()=>{
+    setMaxOverride(exId,null);
+    setEditing(false);
+    setOverrideTick(t=>t+1);
+  };
+  const openEdit=()=>{
+    setEditW(last?String(last.weight):'');
+    setEditR(last?String(last.reps):'');
+    setEditing(true);
+  };
+
+  if(!last&&!editing){
     return(
-      <div style={{background:T.bg2,border:`1px dashed ${T.border}`,borderRadius:10,padding:'10px 14px',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
-        <div style={{color:T.textMuted,display:'flex'}}><Icon.trophy/></div>
-        <span style={{fontSize:12,color:T.textMuted}}>Primera vez registrando este ejercicio — sin referencia previa.</span>
+      <div style={{background:T.bg2,border:`1px dashed ${T.border}`,borderRadius:10,padding:'10px 14px',marginBottom:10}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{color:T.textMuted,display:'flex'}}><Icon.trophy/></div>
+          <span style={{fontSize:12,color:T.textMuted,flex:1}}>Primera vez — sin referencia previa.</span>
+          <button onClick={openEdit} title="Ingresar referencia manual" style={{background:'none',border:`1px solid ${T.border}`,borderRadius:6,padding:'3px 8px',cursor:'pointer',color:T.textMuted,fontSize:11,fontFamily:T.mono}}>✎ Ingresar</button>
+        </div>
+      </div>
+    );
+  }
+  if(editing){
+    return(
+      <div style={{background:T.bg2,border:`1px solid ${T.accent}55`,borderRadius:10,padding:'10px 14px',marginBottom:10}}>
+        <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Editar referencia manual</div>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <div style={{display:'flex',flexDirection:'column',gap:3}}>
+            <span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono}}>Peso (kg)</span>
+            <input type="number" value={editW} onChange={e=>setEditW(e.target.value)} placeholder="ej. 80" style={{width:70,background:T.bg3,border:`1px solid ${T.border}`,borderRadius:6,padding:'5px 8px',color:T.text,fontFamily:T.mono,fontSize:14,textAlign:'center'}}/>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:3}}>
+            <span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono}}>Reps</span>
+            <input type="number" value={editR} onChange={e=>setEditR(e.target.value)} placeholder="ej. 5" style={{width:60,background:T.bg3,border:`1px solid ${T.border}`,borderRadius:6,padding:'5px 8px',color:T.text,fontFamily:T.mono,fontSize:14,textAlign:'center'}}/>
+          </div>
+          <div style={{display:'flex',gap:6,alignItems:'flex-end',paddingBottom:1,marginTop:'auto'}}>
+            <button onClick={handleSaveOverride} style={{background:T.accent,border:'none',borderRadius:6,padding:'6px 12px',cursor:'pointer',color:'#fff',fontSize:12,fontFamily:T.font,fontWeight:600}}>Guardar</button>
+            <button onClick={()=>setEditing(false)} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:6,padding:'6px 10px',cursor:'pointer',color:T.textMuted,fontSize:12,fontFamily:T.font}}>Cancelar</button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -599,30 +661,38 @@ const LastWeightBar=({sessions,exId,currentSets})=>{
       </div>
     );
   }
-  const currentBest=Math.max(0,...currentSets.map(s=>s.weight||0));
-  const pct=Math.min(100,Math.round(currentBest/last.weight*100));
-  const beat=currentBest>=last.weight&&currentBest>0;
+  const currentBest1rm=Math.max(0,...currentSets.map(s=>epley(s.weight||0,s.reps||0)));
+  const last1rm=last.est1rm||epley(last.weight,last.reps);
+  const pct=last1rm>0?Math.min(100,Math.round(currentBest1rm/last1rm*100)):0;
+  const beat=currentBest1rm>=last1rm&&currentBest1rm>0;
   const barColor=beat?T.green:T.accent;
+  const currentBestW=Math.max(0,...currentSets.map(s=>s.weight||0));
   return(
     <div style={{background:T.bg2,border:`1px solid ${beat?T.green+'55':T.border}`,borderRadius:10,padding:'10px 14px',marginBottom:10}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
         <div style={{display:'flex',alignItems:'center',gap:6}}>
           <div style={{color:T.accent,display:'flex'}}><Icon.trophy/></div>
-          <span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em'}}>Última vez (máx)</span>
+          <span style={{fontSize:9,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em'}}>Última vez (máx 1RM)</span>
+          {last.manual&&<Badge color={T.accent}>Manual</Badge>}
         </div>
-        <span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>{daysAgoLabel(last.date)}</span>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          {last.date&&<span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>{daysAgoLabel(last.date)}</span>}
+          <button onClick={openEdit} title="Editar referencia" style={{background:'none',border:'none',padding:'2px 4px',cursor:'pointer',color:T.textMuted,fontSize:13,lineHeight:1}}>✎</button>
+          {last.manual&&<button onClick={handleClearOverride} title="Limpiar referencia manual" style={{background:'none',border:'none',padding:'2px 4px',cursor:'pointer',color:T.textMuted,fontSize:11,lineHeight:1}}>✕</button>}
+        </div>
       </div>
       <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8}}>
         <span style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:T.mono}}>{last.weight}<span style={{fontSize:12,color:T.textMuted}}> kg</span></span>
         <span style={{fontSize:12,color:T.textSub,fontFamily:T.mono}}>× {last.reps} reps</span>
-        {beat&&<span style={{marginLeft:'auto'}}><Badge color={T.green}>¡Igualado/Superado!</Badge></span>}
+        <span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>≈ {last1rm.toFixed(1)} kg 1RM</span>
+        {beat&&<span style={{marginLeft:'auto'}}><Badge color={T.green}>¡Superado!</Badge></span>}
       </div>
       <div style={{position:'relative',background:T.bg3,borderRadius:100,height:6,overflow:'hidden'}}>
         <div style={{width:`${pct}%`,height:'100%',background:barColor,borderRadius:100,transition:'width .4s ease'}}/>
       </div>
       <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
-        <span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>Hoy: {currentBest>0?`${currentBest} kg`:'—'}</span>
-        <span style={{fontSize:10,color:beat?T.green:T.textMuted,fontFamily:T.mono}}>{pct}% del máx</span>
+        <span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>Hoy: {currentBestW>0?`${currentBestW} kg`:'—'}</span>
+        <span style={{fontSize:10,color:beat?T.green:T.textMuted,fontFamily:T.mono}}>{pct}% del 1RM ref.</span>
       </div>
     </div>
   );
