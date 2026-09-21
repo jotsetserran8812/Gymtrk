@@ -98,6 +98,8 @@ const Icon={
   moon:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>,
   flame:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5C5 19 8 22 12 22s7-3 7-8c0-3-1-5-2.5-6.5C13.5 4 12 2 12 2S6 8 6 13c0 1 .5 2 1.5 2.5"/></svg>,
   drop:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5s6 7.5 6 12a6 6 0 01-12 0c0-4.5 6-12 6-12z"/></svg>,
+  list:()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
+  copy:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>,
 };
 
 // ─── SHARED UI ────────────────────────────────────────────────────────────────
@@ -155,6 +157,7 @@ const S={
   set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),
   PROFILE:'gt_profile',PLAN:'gt_plan',SESSIONS:'gt_sessions',APIKEY:'gt_apikey',
   NUTRITION:'gt_nutrition',SEX:'gt_sex',ACTIVE:'gt_active',CUSTOM:'gt_custom',MAXOVERRIDES:'gt_maxoverrides',
+  ROUTINES:'gt_routines',ACTIVE_ROUTINE:'gt_active_routine_id',
 };
 
 // Limpia entrenamientos activos de hace más de 18 horas (probable que se olvidaran)
@@ -1133,9 +1136,10 @@ const DashboardScreen=({profile,plan,sessions,onStartWorkout,onUpdatePlan})=>{
             const isToday=d.day===todayName;
             const isDone=sessions.some(s=>s.workoutLabel===d.label&&s.date.slice(0,10)===today.toISOString().slice(0,10));
             const isActive=i===activeDay;
+            const dayAbbr=d.day?d.day.slice(0,3):(d.label||`D${i+1}`).slice(0,3);
             return(
               <button key={i} onClick={()=>setActiveDay(i)} style={{flexShrink:0,width:52,borderRadius:12,padding:'10px 0',background:isActive?T.accent:T.bg2,border:`1px solid ${isActive?T.accent:isToday?T.accent+'60':T.border}`,cursor:'pointer',transition:'all .15s',display:'flex',flexDirection:'column',alignItems:'center',gap:4,position:'relative'}}>
-                <span style={{fontSize:9,fontFamily:T.mono,color:isActive?T.bg0:T.textMuted,textTransform:'uppercase'}}>{d.day.slice(0,3)}</span>
+                <span style={{fontSize:9,fontFamily:T.mono,color:isActive?T.bg0:T.textMuted,textTransform:'uppercase'}}>{dayAbbr}</span>
                 <div style={{width:6,height:6,borderRadius:'50%',background:isDone?T.green:isActive?T.bg0:T.border}}/>
                 {isToday&&!isActive&&<div style={{position:'absolute',top:-3,right:-3,width:7,height:7,borderRadius:'50%',background:T.accent}}/>}
               </button>
@@ -2103,10 +2107,195 @@ const NutritionScreen=({profile,sessions,apiKey})=>{
   );
 };
 
+// ─── ROUTINES SCREEN ─────────────────────────────────────────────────────────
+const DAY_LABELS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+
+const RoutinesScreen=({routines,activeRoutineId,onActivate,onSave,onDelete})=>{
+  const[view,setView]=useState('list'); // 'list' | 'create' | 'edit'
+  const[editing,setEditing]=useState(null); // rutina en edición (objeto completo)
+  const[confirmDel,setConfirmDel]=useState(null);
+
+  // ── Form state para crear / editar ──
+  const emptyForm=()=>({name:'',reference:'',numDays:4,dayLabels:['Día 1','Día 2','Día 3','Día 4']});
+  const[form,setForm]=useState(emptyForm);
+
+  const openCreate=()=>{setForm(emptyForm());setEditing(null);setView('create');};
+  const openEdit=(r)=>{
+    setForm({name:r.name,reference:r.reference||'',numDays:r.days.length,dayLabels:r.days.map(d=>d.label)});
+    setEditing(r);setView('edit');
+  };
+  const handleDays=(n)=>{
+    setForm(f=>{
+      const labels=Array.from({length:n},(_,i)=>f.dayLabels[i]||DAY_LABELS[i]||`Día ${i+1}`);
+      return{...f,numDays:n,dayLabels:labels};
+    });
+  };
+  const handleLabelChange=(i,v)=>{
+    setForm(f=>{const l=[...f.dayLabels];l[i]=v;return{...f,dayLabels:l};});
+  };
+
+  const handleSave=()=>{
+    if(!form.name.trim())return;
+    if(editing){
+      // editar existente — conservar exercises
+      const newDays=Array.from({length:form.numDays},(_,i)=>({
+        label:form.dayLabels[i]||DAY_LABELS[i]||`Día ${i+1}`,
+        exercises:(editing.days[i]?.exercises)||[],
+      }));
+      onSave({...editing,name:form.name.trim(),reference:form.reference.trim(),days:newDays});
+    }else{
+      // crear nueva
+      const id='routine_'+Date.now().toString(36);
+      const newDays=Array.from({length:form.numDays},(_,i)=>({label:form.dayLabels[i]||DAY_LABELS[i]||`Día ${i+1}`,exercises:[]}));
+      onSave({id,name:form.name.trim(),reference:form.reference.trim(),days:newDays,createdAt:new Date().toISOString()});
+    }
+    setView('list');
+  };
+
+  const handleDuplicate=(r)=>{
+    const id='routine_'+Date.now().toString(36);
+    const copy={...r,id,name:`Copia de ${r.name}`,createdAt:new Date().toISOString(),days:r.days.map(d=>({...d,exercises:[...(d.exercises||[])]}))};
+    onSave(copy);
+  };
+
+  const handleDelete=(r)=>{
+    if(routines.length<=1)return;
+    onDelete(r.id);
+    if(activeRoutineId===r.id)onActivate(routines.find(x=>x.id!==r.id)?.id);
+    setConfirmDel(null);
+  };
+
+  // ── Vista: lista ──
+  if(view==='list'){
+    return(
+      <div style={{height:'100%',overflowY:'auto',padding:'16px 14px 24px',display:'flex',flexDirection:'column',gap:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
+          <h2 style={{margin:0,fontSize:20,fontWeight:700,color:T.text,fontFamily:T.font}}>Mis Rutinas</h2>
+          <button onClick={openCreate} style={{background:T.accent,border:'none',borderRadius:8,padding:'7px 14px',color:T.bg0,fontSize:13,fontWeight:700,fontFamily:T.font,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}>
+            <span style={{fontSize:16,lineHeight:1}}>+</span> Nueva
+          </button>
+        </div>
+
+        {routines.length===0&&(
+          <div style={{textAlign:'center',padding:'40px 0',color:T.textMuted}}>
+            <div style={{fontSize:36,marginBottom:12}}>📋</div>
+            <div style={{fontSize:14,marginBottom:8}}>Sin rutinas guardadas</div>
+            <div style={{fontSize:12,color:T.textMuted}}>Crea tu primera rutina con el botón "Nueva"</div>
+          </div>
+        )}
+
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          {routines.map(r=>{
+            const isActive=r.id===activeRoutineId;
+            const totalEx=(r.days||[]).reduce((n,d)=>n+(d.exercises||[]).length,0);
+            const muscles=[...new Set((r.days||[]).flatMap(d=>(d.exercises||[]).flatMap(e=>(DB.exercises[e.id]?.muscles||[]).slice(0,1))))].slice(0,4);
+            return(
+              <div key={r.id} style={{background:T.bg1,border:`1.5px solid ${isActive?T.accent:T.border}`,borderRadius:12,padding:'14px',position:'relative',transition:'border-color .2s'}}>
+                {isActive&&<div style={{position:'absolute',top:10,right:12}}><Badge color={T.accent}>Activa</Badge></div>}
+                <div style={{paddingRight:isActive?60:0}}>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text,fontFamily:T.font,marginBottom:3}}>{r.name}</div>
+                  {r.reference&&<div style={{fontSize:11,color:T.textMuted,marginBottom:6,lineHeight:1.4}}>{r.reference}</div>}
+                  <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:10}}>
+                    <span style={{fontSize:11,color:T.textSub,fontFamily:T.mono}}>{r.days?.length||0} días/sem</span>
+                    <span style={{fontSize:11,color:T.textSub,fontFamily:T.mono}}>{totalEx} ejercicios</span>
+                    {r.createdAt&&<span style={{fontSize:10,color:T.textMuted,fontFamily:T.mono}}>{new Date(r.createdAt).toLocaleDateString('es',{day:'2-digit',month:'short',year:'2-digit'})}</span>}
+                  </div>
+                  {muscles.length>0&&<div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:10}}>
+                    {muscles.map(m=><span key={m} style={{fontSize:9,fontFamily:T.mono,color:T.accent,background:T.accent+'15',padding:'2px 7px',borderRadius:4,textTransform:'uppercase'}}>{m}</span>)}
+                  </div>}
+                  <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
+                    {!isActive&&(
+                      <button onClick={()=>onActivate(r.id)} style={{background:T.accent,border:'none',borderRadius:7,padding:'6px 12px',color:T.bg0,fontSize:12,fontWeight:700,fontFamily:T.font,cursor:'pointer'}}>Activar</button>
+                    )}
+                    <button onClick={()=>openEdit(r)} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:7,padding:'6px 11px',color:T.textSub,fontSize:12,fontFamily:T.font,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+                      <Icon.edit/> Editar
+                    </button>
+                    <button onClick={()=>handleDuplicate(r)} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:7,padding:'6px 11px',color:T.textSub,fontSize:12,fontFamily:T.font,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+                      <Icon.copy/> Duplicar
+                    </button>
+                    {routines.length>1&&(
+                      confirmDel===r.id?(
+                        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                          <span style={{fontSize:11,color:T.textMuted}}>¿Eliminar?</span>
+                          <button onClick={()=>handleDelete(r)} style={{background:'#ef444420',border:`1px solid #ef444460`,borderRadius:7,padding:'5px 10px',color:'#ef4444',fontSize:11,cursor:'pointer',fontFamily:T.font}}>Sí</button>
+                          <button onClick={()=>setConfirmDel(null)} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:7,padding:'5px 10px',color:T.textMuted,fontSize:11,cursor:'pointer',fontFamily:T.font}}>No</button>
+                        </div>
+                      ):(
+                        <button onClick={()=>setConfirmDel(r.id)} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:7,padding:'6px 11px',color:T.textMuted,fontSize:12,fontFamily:T.font,cursor:'pointer'}}>Eliminar</button>
+                      )
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{marginTop:20,padding:'14px',background:T.bg2,border:`1px dashed ${T.border}`,borderRadius:10,fontSize:11,color:T.textMuted,lineHeight:1.6}}>
+          <b style={{color:T.textSub}}>Tip:</b> Activa la rutina que quieres usar. Para agregar o quitar ejercicios de cada día, ve a Inicio y usa el botón Editar del día seleccionado.
+        </div>
+      </div>
+    );
+  }
+
+  // ── Vista: crear / editar ──
+  return(
+    <div style={{height:'100%',overflowY:'auto',padding:'16px 14px 32px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
+        <button onClick={()=>setView('list')} style={{background:'none',border:'none',cursor:'pointer',color:T.accent,fontSize:13,fontFamily:T.font,padding:0}}>← Volver</button>
+        <h2 style={{margin:0,fontSize:18,fontWeight:700,color:T.text,fontFamily:T.font}}>{editing?'Editar rutina':'Nueva rutina'}</h2>
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <div>
+          <label style={{display:'block',fontSize:11,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:6}}>Nombre</label>
+          <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="ej. Pecho · Espalda · Piernas" style={{width:'100%',boxSizing:'border-box',background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,padding:'10px 12px',color:T.text,fontFamily:T.font,fontSize:14}}/>
+        </div>
+
+        <div>
+          <label style={{display:'block',fontSize:11,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:6}}>Descripción (opcional)</label>
+          <input value={form.reference} onChange={e=>setForm(f=>({...f,reference:e.target.value}))} placeholder="ej. Enfoque en hipertrofia 4×/sem" style={{width:'100%',boxSizing:'border-box',background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,padding:'10px 12px',color:T.text,fontFamily:T.font,fontSize:13}}/>
+        </div>
+
+        <div>
+          <label style={{display:'block',fontSize:11,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:10}}>Días por semana</label>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {[2,3,4,5,6].map(n=>(
+              <button key={n} onClick={()=>handleDays(n)} style={{width:44,height:44,borderRadius:10,border:`1.5px solid ${form.numDays===n?T.accent:T.border}`,background:form.numDays===n?T.accent+'20':T.bg2,color:form.numDays===n?T.accent:T.textSub,fontSize:16,fontWeight:700,fontFamily:T.mono,cursor:'pointer',transition:'all .15s'}}>{n}</button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label style={{display:'block',fontSize:11,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:8}}>Nombre de cada día</label>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {Array.from({length:form.numDays},(_,i)=>(
+              <div key={i} style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:12,color:T.textMuted,fontFamily:T.mono,minWidth:50}}>Día {i+1}</span>
+                <input value={form.dayLabels[i]||''} onChange={e=>handleLabelChange(i,e.target.value)} placeholder={DAY_LABELS[i]||`Día ${i+1}`} style={{flex:1,background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,padding:'8px 12px',color:T.text,fontFamily:T.font,fontSize:13}}/>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {editing&&(
+          <div style={{padding:'10px 12px',background:T.accent+'10',border:`1px solid ${T.accent}30`,borderRadius:8,fontSize:11,color:T.textMuted,lineHeight:1.6}}>
+            Los ejercicios de cada día se conservan. Solo cambia nombre y estructura.
+          </div>
+        )}
+
+        <button onClick={handleSave} disabled={!form.name.trim()} style={{background:form.name.trim()?T.accent:'#333',border:'none',borderRadius:10,padding:'13px',color:form.name.trim()?T.bg0:T.textMuted,fontSize:14,fontWeight:700,fontFamily:T.font,cursor:form.name.trim()?'pointer':'default',transition:'all .2s',marginTop:4}}>
+          {editing?'Guardar cambios':'Crear rutina'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ─── BOTTOM NAV ───────────────────────────────────────────────────────────────
 const BottomNav=({current,onChange})=>(
   <div style={{display:'flex',borderTop:`1px solid ${T.border}`,background:T.bg0,padding:'7px 0 3px'}}>
-    {[{id:'dashboard',icon:Icon.home,l:'Inicio'},{id:'progress',icon:Icon.chart,l:'Progreso'},{id:'nutrition',icon:Icon.apple,l:'Nutrición'},{id:'profile',icon:Icon.user,l:'Perfil'}].map(tab=>(
+    {[{id:'dashboard',icon:Icon.home,l:'Inicio'},{id:'progress',icon:Icon.chart,l:'Progreso'},{id:'routines',icon:Icon.list,l:'Rutinas'},{id:'nutrition',icon:Icon.apple,l:'Nutrición'},{id:'profile',icon:Icon.user,l:'Perfil'}].map(tab=>(
       <button key={tab.id} onClick={()=>onChange(tab.id)} style={{flex:1,background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'5px 0'}}>
         <div style={{color:current===tab.id?T.accent:T.textMuted,transition:'color .15s'}}><tab.icon/></div>
         <span style={{fontSize:9,color:current===tab.id?T.accent:T.textMuted,fontFamily:T.mono,transition:'color .15s'}}>{tab.l}</span>
@@ -2160,23 +2349,42 @@ const App=()=>{
   const[screen,setScreen]=useState('loading');
   const[tab,setTab]=useState('dashboard');
   const[profile,setProfile]=useState(null);
-  const[plan,setPlan]=useState(null);
   const[sessions,setSessions]=useState([]);
   const[apiKey,setApiKey]=useState('');
   const[activeWorkout,setActiveWorkout]=useState(null);
   const[savedActive,setSavedActive]=useState(null);
   const[lastSession,setLastSession]=useState(null);
 
+  // ── Rutinas (multi-plan) ──
+  const[routines,setRoutines]=useState([]);
+  const[activeRoutineId,setActiveRoutineId]=useState(null);
+  // activePlan se deriva de routines + activeRoutineId
+  const activePlan=routines.find(r=>r.id===activeRoutineId)||routines[0]||null;
+
   useEffect(()=>{
     const p=S.get(S.PROFILE);
-    const pl=S.get(S.PLAN);
+    const legacy=S.get(S.PLAN);
     const sess=S.get(S.SESSIONS,[]);
     const key=S.get(S.APIKEY,'');
     const active=cleanStaleActive();
     setApiKey(key||'');
     setSessions(sess||[]);
     if(active&&active.workout&&active.startTime){setSavedActive(active);}
-    if(p&&pl){setProfile(p);setPlan(pl);setScreen('main');}
+
+    // Migrar o cargar rutinas
+    let rts=S.get(S.ROUTINES,null);
+    if(!rts||!rts.length){
+      if(legacy){
+        const r={id:'routine_legacy',name:legacy.name||'Mi rutina',reference:legacy.reference||'',days:legacy.days||[],createdAt:new Date().toISOString()};
+        rts=[r];S.set(S.ROUTINES,rts);
+      }else{rts=[];}
+    }
+    setRoutines(rts);
+    const aid=S.get(S.ACTIVE_ROUTINE,null)||(rts[0]?.id??null);
+    setActiveRoutineId(aid);
+
+    if(p&&rts.length){setProfile(p);setScreen('main');}
+    else if(p&&legacy){setProfile(p);setScreen('main');}
     else{setScreen('onboarding');}
   },[]);
 
@@ -2192,7 +2400,15 @@ const App=()=>{
 
   const handleOnboardingComplete=(form,generatedPlan)=>{
     S.set(S.PROFILE,form);S.set(S.PLAN,generatedPlan);
-    setProfile(form);setPlan(generatedPlan);setScreen('main');
+    setProfile(form);
+    // Guardar también en gt_routines si no existe ya
+    const existing=S.get(S.ROUTINES,null);
+    if(!existing||!existing.length){
+      const r={id:'routine_legacy',name:generatedPlan.name||'Mi rutina',reference:generatedPlan.reference||'',days:generatedPlan.days||[],createdAt:new Date().toISOString()};
+      S.set(S.ROUTINES,[r]);S.set(S.ACTIVE_ROUTINE,r.id);
+      setRoutines([r]);setActiveRoutineId(r.id);
+    }
+    setScreen('main');
   };
 
   const handleUpdateApiKey=(key)=>{
@@ -2214,11 +2430,41 @@ const App=()=>{
   };
 
   const handleReset=()=>{
-    localStorage.clear();setProfile(null);setPlan(null);setSessions([]);setApiKey('');setScreen('onboarding');
+    localStorage.clear();setProfile(null);setRoutines([]);setActiveRoutineId(null);setSessions([]);setApiKey('');setScreen('onboarding');
   };
 
+  // Actualiza la rutina activa (llamado desde DashboardScreen al editar ejercicios)
   const handleUpdatePlan=(newPlan)=>{
-    S.set(S.PLAN,newPlan);setPlan(newPlan);
+    S.set(S.PLAN,newPlan);
+    const updated=routines.map(r=>r.id===activeRoutineId?{...r,days:newPlan.days}:r);
+    S.set(S.ROUTINES,updated);setRoutines(updated);
+  };
+
+  // Activar una rutina por id
+  const handleActivateRoutine=(id)=>{
+    S.set(S.ACTIVE_ROUTINE,id);setActiveRoutineId(id);
+    const r=routines.find(x=>x.id===id);
+    if(r)S.set(S.PLAN,r);
+  };
+
+  // Crear o actualizar una rutina
+  const handleSaveRoutine=(routine)=>{
+    const exists=routines.some(r=>r.id===routine.id);
+    const updated=exists?routines.map(r=>r.id===routine.id?routine:r):[...routines,routine];
+    S.set(S.ROUTINES,updated);setRoutines(updated);
+    if(routine.id===activeRoutineId)S.set(S.PLAN,routine);
+  };
+
+  // Eliminar una rutina
+  const handleDeleteRoutine=(id)=>{
+    if(routines.length<=1)return;
+    const updated=routines.filter(r=>r.id!==id);
+    S.set(S.ROUTINES,updated);setRoutines(updated);
+    if(activeRoutineId===id){
+      const nid=updated[0]?.id??null;
+      S.set(S.ACTIVE_ROUTINE,nid);setActiveRoutineId(nid);
+      if(nid){const r=updated.find(x=>x.id===nid);if(r)S.set(S.PLAN,r);}
+    }
   };
 
   const navigate=(t)=>{setTab(t);};
@@ -2232,8 +2478,9 @@ const App=()=>{
   const renderContent=()=>{
     if(screen==='workout'&&activeWorkout)return<WorkoutScreen workout={activeWorkout} profile={profile} apiKey={apiKey} sessions={sessions} onFinish={handleFinishWorkout} savedState={savedActive}/>;
     if(screen==='done'&&lastSession)return<WorkoutDoneScreen session={lastSession} onClose={()=>{setScreen('main');setTab('dashboard');}}/>;
-    if(tab==='dashboard')return<DashboardScreen profile={profile} plan={plan} sessions={sessions} onStartWorkout={handleStartWorkout} onUpdatePlan={handleUpdatePlan}/>;
+    if(tab==='dashboard')return<DashboardScreen profile={profile} plan={activePlan} sessions={sessions} onStartWorkout={handleStartWorkout} onUpdatePlan={handleUpdatePlan}/>;
     if(tab==='progress')return<ProgressScreen sessions={sessions} profile={profile}/>;
+    if(tab==='routines')return<RoutinesScreen routines={routines} activeRoutineId={activeRoutineId} onActivate={handleActivateRoutine} onSave={handleSaveRoutine} onDelete={handleDeleteRoutine}/>;
     if(tab==='nutrition')return<NutritionScreen profile={profile} sessions={sessions} apiKey={apiKey}/>;
     if(tab==='profile')return<ProfileScreen profile={profile} apiKey={apiKey} onUpdateApiKey={handleUpdateApiKey} onReset={handleReset}/>;
   };
