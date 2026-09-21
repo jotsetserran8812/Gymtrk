@@ -1382,7 +1382,16 @@ const WorkoutScreen=({workout,profile,apiKey,sessions=[],onFinish,savedState})=>
   const fmt=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
   const restTotal=restTotalRef.current||1;
 
+  const[confirmFinish,setConfirmFinish]=useState(false);
+
   const handleFinish=()=>{
+    // Guardar solo si hay al menos 1 serie completada Y al menos 3 min de entreno
+    const shortSession=elapsed<180; // < 3 minutos
+    const noSets=totalDone===0;
+    if(shortSession||noSets){setConfirmFinish(true);return;}
+    doFinish();
+  };
+  const doFinish=()=>{
     const sessionExercises=exercises.map((ex,ei)=>({id:ex.id,name:DB.exercises[ex.id]?.name||ex.id,sets:sets[ei]}));
     S.set(S.ACTIVE,null);
     onFinish({exercises:sessionExercises,duration:elapsed,workoutLabel:workout.label});
@@ -1405,6 +1414,20 @@ const WorkoutScreen=({workout,profile,apiKey,sessions=[],onFinish,savedState})=>
           <ProgressBar value={totalDone} max={totalSets}/>
           <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,marginTop:3}}>{totalDone}/{totalSets} series completadas</div>
         </div>
+        {confirmFinish&&(
+          <div style={{marginTop:10,background:T.red+'12',border:`1px solid ${T.red}44`,borderRadius:10,padding:'12px 14px',display:'flex',flexDirection:'column',gap:8}}>
+            <div style={{fontSize:12,color:T.text,fontWeight:600}}>
+              {totalDone===0?'No completaste ninguna serie':'Sesión muy corta'}
+            </div>
+            <div style={{fontSize:11,color:T.textMuted,fontFamily:T.mono}}>
+              {fmt(elapsed)} · {totalDone} serie{totalDone!==1?'s':''} completada{totalDone!==1?'s':''}
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={()=>setConfirmFinish(false)} style={{flex:1,background:'none',border:`1px solid ${T.border}`,borderRadius:8,padding:'7px 0',cursor:'pointer',color:T.textSub,fontSize:12,fontFamily:T.font}}>Seguir</button>
+              <button onClick={doFinish} style={{flex:1,background:T.red+'20',border:`1px solid ${T.red}55`,borderRadius:8,padding:'7px 0',cursor:'pointer',color:T.red,fontSize:12,fontWeight:700,fontFamily:T.font}}>Guardar de todas formas</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {restActive&&(
