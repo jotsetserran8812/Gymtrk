@@ -1333,6 +1333,21 @@ const WorkoutScreen=({workout,profile,apiKey,sessions=[],onFinish,savedState})=>
   // Deshacer una serie marcada como lista para corregir peso/reps
   const undoSet=(ei,si)=>updateSet(ei,si,'done',false);
 
+  const addSet=(ei)=>setSets(prev=>prev.map((es,e)=>{
+    if(e!==ei)return es;
+    const last=es[es.length-1]||{};
+    const cardio=isCardioId(exercises[ei].id);
+    return[...es,{setNum:es.length+1,reps:last.reps||(cardio?0:8),weight:last.weight||0,done:false}];
+  }));
+
+  const removeSet=(ei)=>setSets(prev=>prev.map((es,e)=>{
+    if(e!==ei||es.length<=1)return es;
+    // no borrar si el último set ya está marcado como hecho
+    const last=es[es.length-1];
+    if(last.done)return es;
+    return es.slice(0,-1);
+  }));
+
   const skipRest=()=>{restEndRef.current=0;setRestActive(false);setRestTime(0);};
 
   const handleSwap=(newEx)=>{
@@ -1490,6 +1505,11 @@ const WorkoutScreen=({workout,profile,apiKey,sessions=[],onFinish,savedState})=>
                   </div>
                 </div>
               ))}
+              {/* Agregar / quitar set en caliente */}
+              <div style={{display:'flex',borderTop:`1px solid ${T.border}`}}>
+                <button onClick={()=>removeSet(currentIdx)} disabled={currentSets.length<=1||currentSets[currentSets.length-1]?.done} style={{flex:1,background:'none',border:'none',borderRight:`1px solid ${T.border}`,padding:'9px 0',cursor:'pointer',color:(currentSets.length<=1||currentSets[currentSets.length-1]?.done)?T.bg3:T.textMuted,fontSize:18,lineHeight:1,transition:'color .15s'}}>−</button>
+                <button onClick={()=>addSet(currentIdx)} style={{flex:1,background:'none',border:'none',padding:'9px 0',cursor:'pointer',color:T.accent,fontSize:18,lineHeight:1}}>+</button>
+              </div>
             </div>
             {currentIdx<exercises.length-1&&(
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'11px 14px'}}>
