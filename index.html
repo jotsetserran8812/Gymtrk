@@ -1541,6 +1541,221 @@ const WorkoutDoneScreen=({session,onClose})=>{
   );
 };
 
+// ─── TRAINING CALENDAR ────────────────────────────────────────────────────────
+const MONTH_ES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const DAY_ABBR_ES=['Lu','Ma','Mi','Ju','Vi','Sa','Do'];
+
+const TrainingCalendar=({sessions})=>{
+  const[view,setView]=useState('month');
+  const now=new Date();
+  const[calYear,setCalYear]=useState(now.getFullYear());
+  const[calMonth,setCalMonth]=useState(now.getMonth()); // 0-11
+  const[detail,setDetail]=useState(null); // {date,sessions[]}
+
+  // Mapa fecha ISO → array de sesiones
+  const sessionMap=useMemo(()=>{
+    const m={};
+    sessions.forEach(s=>{
+      const k=s.date.slice(0,10);
+      if(!m[k])m[k]=[];
+      m[k].push(s);
+    });
+    return m;
+  },[sessions]);
+
+  const todayStr=now.toISOString().slice(0,10);
+
+  // ── Vista MES ──────────────────────────────────────────────────────────────
+  const renderMonth=()=>{
+    const firstDay=new Date(calYear,calMonth,1);
+    const lastDay=new Date(calYear,calMonth+1,0);
+    const daysInMonth=lastDay.getDate();
+    // lunes=0 ... domingo=6
+    let startDow=(firstDay.getDay()+6)%7; // reindexar: Lu=0
+    const cells=[];
+    for(let i=0;i<startDow;i++)cells.push(null);
+    for(let d=1;d<=daysInMonth;d++)cells.push(d);
+
+    const prevMonth=()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);};
+    const nextMonth=()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);};
+
+    const monthSessions=sessions.filter(s=>{
+      const d=new Date(s.date);
+      return d.getFullYear()===calYear&&d.getMonth()===calMonth;
+    });
+
+    return(
+      <>
+        {/* Header nav */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+          <button onClick={prevMonth} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,cursor:'pointer',color:T.textSub,fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>‹</button>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,fontFamily:T.font}}>{MONTH_ES[calMonth]} {calYear}</div>
+            <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,marginTop:1}}>{monthSessions.length} sesión{monthSessions.length!==1?'es':''}</div>
+          </div>
+          <button onClick={nextMonth} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,cursor:'pointer',color:T.textSub,fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>›</button>
+        </div>
+        {/* Cabecera días */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:4}}>
+          {DAY_ABBR_ES.map(d=>(
+            <div key={d} style={{textAlign:'center',fontSize:9,color:T.textMuted,fontFamily:T.mono,padding:'2px 0'}}>{d}</div>
+          ))}
+        </div>
+        {/* Celdas */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
+          {cells.map((day,i)=>{
+            if(!day)return<div key={`e${i}`}/>;
+            const dateStr=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+            const hasSess=!!sessionMap[dateStr];
+            const isToday=dateStr===todayStr;
+            const isFuture=dateStr>todayStr;
+            return(
+              <button key={dateStr} onClick={()=>hasSess&&setDetail({date:dateStr,sessions:sessionMap[dateStr]})}
+                style={{aspectRatio:'1',borderRadius:8,border:`1.5px solid ${isToday?T.accent:hasSess?T.accent+'50':'transparent'}`,background:hasSess?T.accent+'22':isToday?T.accent+'10':'transparent',cursor:hasSess?'pointer':'default',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:1,padding:2,position:'relative'}}>
+                <span style={{fontSize:11,fontFamily:T.mono,color:isToday?T.accent:hasSess?T.text:isFuture?T.bg3:T.textMuted,fontWeight:isToday||hasSess?700:400}}>{day}</span>
+                {hasSess&&<div style={{width:4,height:4,borderRadius:'50%',background:T.accent}}/>}
+              </button>
+            );
+          })}
+        </div>
+      </>
+    );
+  };
+
+  // ── Vista AÑO ──────────────────────────────────────────────────────────────
+  const renderYear=()=>{
+    const years=[...new Set(sessions.map(s=>new Date(s.date).getFullYear()))].sort((a,b)=>b-a);
+    if(!years.includes(calYear)&&years.length>0&&!years.includes(now.getFullYear()))setCalYear(years[0]);
+
+    // Construir semanas del año (Lu a Do)
+    const jan1=new Date(calYear,0,1);
+    // Retroceder hasta el lunes anterior a Jan 1
+    const startDow=(jan1.getDay()+6)%7;
+    const startDate=new Date(jan1);startDate.setDate(jan1.getDate()-startDow);
+
+    const weeks=[];
+    let cur=new Date(startDate);
+    while(cur.getFullYear()<=calYear){
+      const week=[];
+      for(let d=0;d<7;d++){
+        const ds=cur.toISOString().slice(0,10);
+        week.push({date:ds,inYear:cur.getFullYear()===calYear,hasSess:!!sessionMap[ds],isToday:ds===todayStr});
+        cur.setDate(cur.getDate()+1);
+      }
+      weeks.push(week);
+      if(cur.getFullYear()>calYear)break;
+    }
+
+    // Etiquetas de mes (columna de cada semana donde empieza el mes)
+    const monthLabels={};
+    weeks.forEach((wk,wi)=>{
+      wk.forEach(day=>{
+        if(day.inYear&&day.date.slice(8,10)==='01'){
+          const m=parseInt(day.date.slice(5,7))-1;
+          monthLabels[wi]=MONTH_ES[m].slice(0,3);
+        }
+      });
+    });
+
+    const yearCount=sessions.filter(s=>new Date(s.date).getFullYear()===calYear).length;
+
+    return(
+      <>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+          <button onClick={()=>setCalYear(y=>y-1)} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,cursor:'pointer',color:T.textSub,fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>‹</button>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,fontFamily:T.font}}>{calYear}</div>
+            <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,marginTop:1}}>{yearCount} sesión{yearCount!==1?'es':''} este año</div>
+          </div>
+          <button onClick={()=>setCalYear(y=>y+1)} disabled={calYear>=now.getFullYear()} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,cursor:'pointer',color:calYear>=now.getFullYear()?T.bg3:T.textSub,fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>›</button>
+        </div>
+        {/* Mes labels */}
+        <div style={{display:'flex',overflowX:'auto',paddingBottom:4}}>
+          <div style={{display:'flex',flexDirection:'column',gap:1,marginRight:2}}>
+            {DAY_ABBR_ES.map(d=><div key={d} style={{height:10,fontSize:7,color:T.textMuted,fontFamily:T.mono,lineHeight:'10px',whiteSpace:'nowrap'}}>{d}</div>)}
+          </div>
+          <div style={{display:'flex',gap:1,flex:1}}>
+            {weeks.map((wk,wi)=>(
+              <div key={wi} style={{display:'flex',flexDirection:'column',gap:1,flex:'0 0 auto',width:10,position:'relative'}}>
+                {monthLabels[wi]&&<div style={{position:'absolute',top:-14,left:0,fontSize:7,color:T.textMuted,fontFamily:T.mono,whiteSpace:'nowrap'}}>{monthLabels[wi]}</div>}
+                {wk.map((day,di)=>(
+                  <div key={di} onClick={()=>day.hasSess&&setDetail({date:day.date,sessions:sessionMap[day.date]})}
+                    style={{width:10,height:10,borderRadius:2,background:!day.inYear?'transparent':day.hasSess?T.accent:day.isToday?T.accent+'30':T.bg3,cursor:day.hasSess?'pointer':'default',border:day.isToday?`1px solid ${T.accent}88`:day.hasSess?`1px solid ${T.accent}40`:'none'}}/>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Leyenda meses por fila */}
+        <div style={{display:'flex',gap:3,flexWrap:'wrap',marginTop:10}}>
+          {Array.from({length:12},(_,mi)=>{
+            const count=sessions.filter(s=>{const d=new Date(s.date);return d.getFullYear()===calYear&&d.getMonth()===mi;}).length;
+            return(
+              <button key={mi} onClick={()=>{setCalMonth(mi);setView('month');}} style={{flex:'0 0 calc(25% - 3px)',background:count>0?T.accent+'18':T.bg3,border:`1px solid ${count>0?T.accent+'40':T.border}`,borderRadius:6,padding:'5px 4px',cursor:'pointer',textAlign:'center'}}>
+                <div style={{fontSize:9,color:count>0?T.accent:T.textMuted,fontFamily:T.mono,marginBottom:1}}>{MONTH_ES[mi].slice(0,3)}</div>
+                <div style={{fontSize:11,fontWeight:700,fontFamily:T.mono,color:count>0?T.text:T.textMuted}}>{count}</div>
+              </button>
+            );
+          })}
+        </div>
+      </>
+    );
+  };
+
+  // ── Popup detalle de día ───────────────────────────────────────────────────
+  const renderDetail=()=>{
+    if(!detail)return null;
+    const[y,m,d]=detail.date.split('-');
+    const label=`${parseInt(d)} de ${MONTH_ES[parseInt(m)-1]} de ${y}`;
+    return(
+      <div onClick={()=>setDetail(null)} style={{position:'fixed',inset:0,background:'#00000088',zIndex:200,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:T.bg1,border:`1px solid ${T.border}`,borderRadius:'16px 16px 0 0',padding:'20px 18px 32px',width:'100%',maxWidth:480}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>{label}</div>
+              <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,marginTop:2}}>{detail.sessions.length} sesión{detail.sessions.length!==1?'es':''}</div>
+            </div>
+            <button onClick={()=>setDetail(null)} style={{background:'none',border:'none',cursor:'pointer',color:T.textMuted,fontSize:20,lineHeight:1}}>×</button>
+          </div>
+          {detail.sessions.map((s,i)=>(
+            <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:'10px 12px',marginBottom:8}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>{s.workoutLabel||'Entrenamiento'}</div>
+              <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+                {(s.exercises||[]).map(ex=>{
+                  const done=(ex.sets||[]).filter(st=>st.done);
+                  const top=done.filter(st=>st.weight>0).reduce((a,st)=>st.weight>a?st.weight:a,0);
+                  return(
+                    <div key={ex.id} style={{fontSize:11,color:T.textMuted,fontFamily:T.mono}}>
+                      {DB.exercises[ex.id]?.name||ex.name||ex.id}
+                      {top>0&&<span style={{color:T.accent}}> {top}kg</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              {s.duration&&<div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,marginTop:4}}>{Math.round(s.duration/60)} min</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return(
+    <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px',marginBottom:20}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+        <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em'}}>Sesiones completadas</div>
+        <div style={{display:'flex',background:T.bg3,borderRadius:8,padding:2,gap:2}}>
+          {[{v:'month',l:'Mes'},{v:'year',l:'Año'}].map(tab=>(
+            <button key={tab.v} onClick={()=>setView(tab.v)} style={{background:view===tab.v?T.bg1:'none',border:`1px solid ${view===tab.v?T.border:'transparent'}`,borderRadius:6,padding:'4px 10px',cursor:'pointer',fontSize:11,fontFamily:T.mono,color:view===tab.v?T.text:T.textMuted,fontWeight:view===tab.v?600:400,transition:'all .15s'}}>{tab.l}</button>
+          ))}
+        </div>
+      </div>
+      {view==='month'?renderMonth():renderYear()}
+      {renderDetail()}
+    </div>
+  );
+};
+
 // ─── PROGRESS ─────────────────────────────────────────────────────────────────
 const ProgressScreen=({sessions,profile})=>{
   const[metric,setMetric]=useState('volume');
@@ -1673,23 +1888,7 @@ const ProgressScreen=({sessions,profile})=>{
           </div>
         )}
       </div>
-      <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px',marginBottom:20}}>
-        <div style={{fontSize:10,color:T.textMuted,fontFamily:T.mono,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:12}}>Sesiones completadas</div>
-        <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
-          {Array.from({length:12},(_, i)=>{
-            const weekAgo=new Date();weekAgo.setDate(weekAgo.getDate()-(11-i)*7);
-            const weekEnd=new Date(weekAgo);weekEnd.setDate(weekAgo.getDate()+7);
-            const count=sessions.filter(s=>{const d=new Date(s.date);return d>=weekAgo&&d<weekEnd;}).length;
-            const rate=Math.min(count/4,1);
-            return<div key={i} style={{flex:1,minWidth:18,height:32,borderRadius:4,background:rate>0.8?T.accent:rate>0.4?T.accent+'70':rate>0?T.accent+'30':T.bg3,title:`Semana ${i+1}`}}/>;
-          })}
-        </div>
-        <div style={{display:'flex',gap:14,marginTop:12}}>
-          {[['100%',T.accent],['~50%',T.accent+'70'],['<25%',T.accent+'30']].map(([l,c])=>(
-            <div key={l} style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:2,background:c}}/><span style={{fontSize:10,color:T.textMuted}}>{l}</span></div>
-          ))}
-        </div>
-      </div>
+      <TrainingCalendar sessions={sessions}/>
     </div>
   );
 };
